@@ -120,6 +120,11 @@ export interface GlossaryResponse {
   created_at: string;
 }
 
+export interface ModelsResponse {
+  default: string;
+  installed: string[];
+}
+
 export interface ApiErrorBody {
   detail: string;
   code?: string | null;

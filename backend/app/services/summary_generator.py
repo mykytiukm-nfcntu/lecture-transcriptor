@@ -33,6 +33,7 @@ def generate(
     language: str,
     lecture_title: str,
     on_step: Callable[[], None] | None = None,
+    model: str | None = None,
 ) -> SummaryDocument:
     """Produce the final `SummaryDocument` from `chunks` via map + reduce."""
     if not chunks:
@@ -60,7 +61,7 @@ def generate(
             "Summary map step",
             extra={"chunk_index": idx, "chunk_count": len(chunks)},
         )
-        partial = generate_json(prompt, schema=SummaryDocument)
+        partial = generate_json(prompt, schema=SummaryDocument, model=model)
         partials.append(partial)
         _tick()
 
@@ -78,6 +79,6 @@ def generate(
         lecture_title=lecture_title,
     )
     logger.info("Summary reduce step", extra={"partial_count": len(partials)})
-    result = generate_json(reduce_prompt, schema=SummaryDocument)
+    result = generate_json(reduce_prompt, schema=SummaryDocument, model=model)
     _tick()
     return result

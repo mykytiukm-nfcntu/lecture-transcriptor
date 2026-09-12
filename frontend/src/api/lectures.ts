@@ -14,6 +14,7 @@ export interface UploadLectureInput {
   file: File;
   title?: string;
   language?: string;
+  model?: string;
 }
 
 export interface TranscriptQuery {
@@ -42,6 +43,9 @@ export async function uploadLecture(input: UploadLectureInput): Promise<LectureU
   }
   if (input.language !== undefined && input.language.length > 0) {
     params.set('language', input.language);
+  }
+  if (input.model !== undefined && input.model.length > 0) {
+    params.set('model', input.model);
   }
   const query = params.toString();
   const path = `/api/courses/${input.courseId}/lectures${query ? `?${query}` : ''}`;

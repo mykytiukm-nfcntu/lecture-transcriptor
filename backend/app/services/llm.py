@@ -83,19 +83,21 @@ T = TypeVar("T", bound=BaseModel)
 
 
 def generate_json(prompt: str, *, schema: type[T], model: str | None = None) -> T:
-    """POST `prompt` to Ollama in JSON mode, parse the response, validate against `schema`.
+    """POST `prompt` to Ollama in schema-constrained JSON mode, parse and validate the reply.
 
-    Retries up to `settings.LLM_MAX_RETRIES` additional times on transport, JSON-parse, or
-    schema-validation failure. The prompt is not modified between attempts. On final failure,
-    raises `LlmGenerationError` with the last exception attached.
+    Sends the target schema in `format` so Ollama forces the model to conform (Ollama >=0.5);
+    older Ollamas still receive valid JSON, and the retry loop catches any remaining shape
+    mismatches. Retries up to `settings.LLM_MAX_RETRIES` additional times on transport,
+    JSON-parse, or validation failure. On final failure raises `LlmGenerationError`.
     """
     settings = get_settings()
     client = _get_client()
+    resolved_model = model or settings.OLLAMA_MODEL
     payload: dict[str, Any] = {
-        "model": model or settings.OLLAMA_MODEL,
+        "model": resolved_model,
         "prompt": prompt,
         "stream": False,
-        "format": "json",
+        "format": schema.model_json_schema(),
         "options": {"temperature": 0.2},
     }
 
@@ -115,9 +117,10 @@ def generate_json(prompt: str, *, schema: type[T], model: str | None = None) -> 
             last_exc = exc
             if attempt < max_attempts:
                 logger.warning(
-                    "LLM call failed (attempt %d/%d): %s",
+                    "LLM call failed (attempt %d/%d) on %s: %s",
                     attempt,
                     max_attempts,
+                    resolved_model,
                     exc,
                 )
                 continue

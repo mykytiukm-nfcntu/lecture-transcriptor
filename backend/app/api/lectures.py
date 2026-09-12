@@ -113,6 +113,7 @@ def upload_lecture(
     file: Annotated[UploadFile, File(description="MP3 or WAV recording of the lecture.")],
     title: str | None = None,
     language: str | None = None,
+    model: str | None = None,
 ) -> LectureUploadAccepted:
     """Accept a lecture upload, persist it, and kick off background processing."""
     _get_owned_course(db, course_id, user.id)
@@ -171,7 +172,7 @@ def upload_lecture(
     db.refresh(lecture)
 
     try:
-        worker.enqueue(lecture.id, generation_language=language)
+        worker.enqueue(lecture.id, generation_language=language, model=model)
     except LockedError as exc:
         db.delete(lecture)
         db.commit()

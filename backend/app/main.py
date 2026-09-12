@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import artifacts, auth, courses, export, lectures
+from app.api import artifacts, auth, courses, export, lectures, models
 from app.api import media as media_routes
 from app.core.config import get_settings
 from app.core.db import create_all
@@ -108,6 +108,7 @@ def create_app() -> FastAPI:
     app.include_router(artifacts.router)
     app.include_router(media_routes.router)
     app.include_router(export.router)
+    app.include_router(models.router)
 
     return app
 

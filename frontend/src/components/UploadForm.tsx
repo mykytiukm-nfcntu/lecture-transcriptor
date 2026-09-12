@@ -1,10 +1,11 @@
 import type { ChangeEvent, FormEvent, ReactElement } from 'react';
 import { useRef, useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { ApiError } from '@/api/client';
 import { uploadLecture } from '@/api/lectures';
-import type { LectureUploadAccepted } from '@/types/api';
+import { listModels } from '@/api/models';
+import type { LectureUploadAccepted, ModelsResponse } from '@/types/api';
 
 interface UploadFormProps {
   courseId: number;
@@ -14,10 +15,14 @@ interface UploadFormProps {
 
 type Language = 'auto' | 'uk' | 'en';
 
+// Sentinel for the "use server default" option in the model dropdown.
+const DEFAULT_MODEL_KEY = '__default__';
+
 interface FormValues {
   file: File;
   title: string;
   language: Language;
+  model: string;
 }
 
 const ACCEPTED_EXTS = ['.mp3', '.wav'] as const;
@@ -42,7 +47,14 @@ export function UploadForm({ courseId, disabled, disabledReason }: UploadFormPro
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState('');
   const [language, setLanguage] = useState<Language>('auto');
+  const [model, setModel] = useState<string>(DEFAULT_MODEL_KEY);
   const [validationError, setValidationError] = useState<string | null>(null);
+
+  const modelsQuery = useQuery<ModelsResponse>({
+    queryKey: ['models'],
+    queryFn: listModels,
+    staleTime: 30_000,
+  });
 
   const mutation = useMutation<LectureUploadAccepted, Error, FormValues>({
     mutationFn: (input) =>
@@ -51,11 +63,13 @@ export function UploadForm({ courseId, disabled, disabledReason }: UploadFormPro
         file: input.file,
         title: input.title.trim().length > 0 ? input.title.trim() : undefined,
         language: input.language === 'auto' ? undefined : input.language,
+        model: input.model === DEFAULT_MODEL_KEY ? undefined : input.model,
       }),
     onSuccess: () => {
       setFile(null);
       setTitle('');
       setLanguage('auto');
+      setModel(DEFAULT_MODEL_KEY);
       setValidationError(null);
       if (fileInputRef.current !== null) {
         fileInputRef.current.value = '';
@@ -81,7 +95,7 @@ export function UploadForm({ courseId, disabled, disabledReason }: UploadFormPro
     }
     setValidationError(null);
     if (file === null) return;
-    mutation.mutate({ file, title, language });
+    mutation.mutate({ file, title, language, model });
   };
 
   const submitDisabled = disabled || mutation.isPending;
@@ -142,6 +156,37 @@ export function UploadForm({ courseId, disabled, disabledReason }: UploadFormPro
           className="mt-1 block w-full rounded border border-slate-300 px-2 py-1 text-sm"
           placeholder="Defaults to the original filename"
         />
+      </div>
+
+      <div>
+        <label htmlFor="upload-model" className="block text-sm font-medium text-slate-700">
+          LLM model
+        </label>
+        <select
+          id="upload-model"
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          className="mt-1 block w-full rounded border border-slate-300 px-2 py-1 text-sm"
+          disabled={modelsQuery.isLoading}
+        >
+          <option value={DEFAULT_MODEL_KEY}>
+            {modelsQuery.data !== undefined
+              ? `Server default (${modelsQuery.data.default})`
+              : 'Server default'}
+          </option>
+          {(modelsQuery.data?.installed ?? []).map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1 text-xs text-slate-500">
+          Install more with{' '}
+          <code className="rounded bg-slate-100 px-1 py-0.5">ollama pull &lt;name&gt;</code>
+          {modelsQuery.data !== undefined && modelsQuery.data.installed.length === 0
+            ? ' — Ollama is running but no models are installed yet.'
+            : ' (e.g. qwen2.5:7b-instruct, llama3.2:3b, phi4).'}
+        </p>
       </div>
 
       {errorMessage !== null ? (

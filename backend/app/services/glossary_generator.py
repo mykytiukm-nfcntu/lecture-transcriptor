@@ -38,6 +38,7 @@ def generate(
     language: str,
     lecture_title: str,
     on_step: Callable[[], None] | None = None,
+    model: str | None = None,
 ) -> GlossaryDocument:
     """Produce the `GlossaryDocument` (10-30 entries) for the lecture."""
     transcript_repr = _build_transcript_repr(chunks, segments)
@@ -48,7 +49,7 @@ def generate(
         lecture_title=lecture_title,
     )
     logger.info("Glossary generation", extra={"chunk_count": len(chunks)})
-    result = generate_json(prompt, schema=GlossaryDocument)
+    result = generate_json(prompt, schema=GlossaryDocument, model=model)
     if on_step is not None:
         try:
             on_step()

@@ -79,7 +79,7 @@ def _worker_loop() -> None:
                 logger.info("Worker received shutdown sentinel; exiting")
                 return
             try:
-                raw_id, generation_language = item
+                raw_id, generation_language, model = item
                 lecture_id = int(raw_id)
             except (TypeError, ValueError):
                 logger.error("Worker received malformed queue item: %r", item)
@@ -95,7 +95,11 @@ def _worker_loop() -> None:
                 continue
 
             try:
-                pipeline.process_lecture(lecture_id, generation_language=generation_language)
+                pipeline.process_lecture(
+                    lecture_id,
+                    generation_language=generation_language,
+                    model=model,
+                )
             except Exception:
                 logger.exception("Uncaught pipeline exception for lecture %d", lecture_id)
                 _mark_failed_without_lock(lecture_id, "Uncaught worker exception")
@@ -145,17 +149,21 @@ def stop_worker(timeout: float = 10.0) -> None:
         _worker_thread = None
 
 
-def enqueue(lecture_id: int, generation_language: str | None = None) -> None:
+def enqueue(
+    lecture_id: int,
+    generation_language: str | None = None,
+    model: str | None = None,
+) -> None:
     """Add `lecture_id` to the job queue. Raises `LockedError` if a job is already active.
 
-    `generation_language` is an optional per-request override that flows through to the
-    pipeline in place of the ASR-detected language when calling the summary/glossary
-    generators. `None` means "use the detected language".
+    `generation_language` overrides the ASR-detected language when calling the LLM
+    generators. `model` overrides `settings.OLLAMA_MODEL` for those same calls. Both `None`
+    fall back to the process-wide defaults.
     """
     if job_lock.is_locked() or not job_queue.empty():
         raise LockedError("Another transcription is currently running")
     try:
-        job_queue.put_nowait((lecture_id, generation_language))
+        job_queue.put_nowait((lecture_id, generation_language, model))
     except queue.Full as exc:
         # Race between the check above and the put; treat as if the lock is held.
         raise LockedError("Another transcription is currently running") from exc

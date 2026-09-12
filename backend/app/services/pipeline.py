@@ -42,12 +42,18 @@ def _find_original(user_id: int, lecture_id: int) -> Path | None:
     return None
 
 
-def process_lecture(lecture_id: int, generation_language: str | None = None) -> None:
+def process_lecture(
+    lecture_id: int,
+    generation_language: str | None = None,
+    model: str | None = None,
+) -> None:
     """Run the full pipeline for one lecture. Never raises - failure is stored on the row.
 
     `generation_language`, if provided, replaces the ASR-detected language when calling
     the summary and glossary generators and is what gets persisted on those artifact
     rows. `lecture.language` always stores the audio language detected by ASR.
+
+    `model`, if provided, overrides `settings.OLLAMA_MODEL` for the LLM calls in this run.
     """
     correlation_id.set(f"lecture-{lecture_id}")
     logger.info("Pipeline start", extra={"lecture_id": lecture_id})
@@ -155,6 +161,7 @@ def process_lecture(lecture_id: int, generation_language: str | None = None) -> 
                 language=resolved_language,
                 lecture_title=lecture.title,
                 on_step=_on_gen_step,
+                model=model,
             )
         except llm.LlmGenerationError as exc:
             _mark_failed(db, lecture, f"Summary generation failed: {exc}")
@@ -167,6 +174,7 @@ def process_lecture(lecture_id: int, generation_language: str | None = None) -> 
                 language=resolved_language,
                 lecture_title=lecture.title,
                 on_step=_on_gen_step,
+                model=model,
             )
         except llm.LlmGenerationError as exc:
             _mark_failed(db, lecture, f"Glossary generation failed: {exc}")
