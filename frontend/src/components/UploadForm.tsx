@@ -29,14 +29,14 @@ const ACCEPTED_EXTS = ['.mp3', '.wav'] as const;
 
 function validateFile(file: File | null): string | null {
   if (file === null) {
-    return 'Please choose an .mp3 or .wav file.';
+    return 'Виберіть файл .mp3 або .wav.';
   }
   if (file.size === 0) {
-    return 'The selected file is empty.';
+    return 'Вибраний файл порожній.';
   }
   const lowered = file.name.toLowerCase();
   if (!ACCEPTED_EXTS.some((ext) => lowered.endsWith(ext))) {
-    return 'Only .mp3 and .wav files are supported.';
+    return 'Підтримуються лише файли .mp3 та .wav.';
   }
   return null;
 }
@@ -111,12 +111,12 @@ export function UploadForm({ courseId, disabled, disabledReason }: UploadFormPro
     <form
       onSubmit={handleSubmit}
       className="space-y-3 rounded border border-slate-200 bg-white p-4 shadow-sm"
-      aria-label="Upload lecture"
+      aria-label="Завантаження лекції"
     >
       <div className="grid gap-3 md:grid-cols-3">
         <div className="md:col-span-2">
           <label htmlFor="upload-file" className="block text-sm font-medium text-slate-700">
-            Audio file (.mp3 or .wav)
+            Аудіофайл (.mp3 або .wav)
           </label>
           <input
             ref={fileInputRef}
@@ -129,7 +129,7 @@ export function UploadForm({ courseId, disabled, disabledReason }: UploadFormPro
         </div>
         <div>
           <label htmlFor="upload-language" className="block text-sm font-medium text-slate-700">
-            Language
+            Мова
           </label>
           <select
             id="upload-language"
@@ -137,16 +137,16 @@ export function UploadForm({ courseId, disabled, disabledReason }: UploadFormPro
             onChange={(e) => setLanguage(e.target.value as Language)}
             className="mt-1 block w-full rounded border border-slate-300 px-2 py-1 text-sm"
           >
-            <option value="auto">Auto-detect</option>
-            <option value="uk">Ukrainian</option>
-            <option value="en">English</option>
+            <option value="auto">Автовизначення</option>
+            <option value="uk">Українська</option>
+            <option value="en">Англійська</option>
           </select>
         </div>
       </div>
 
       <div>
         <label htmlFor="upload-title" className="block text-sm font-medium text-slate-700">
-          Title (optional)
+          Назва (необов'язково)
         </label>
         <input
           id="upload-title"
@@ -154,13 +154,13 @@ export function UploadForm({ courseId, disabled, disabledReason }: UploadFormPro
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           className="mt-1 block w-full rounded border border-slate-300 px-2 py-1 text-sm"
-          placeholder="Defaults to the original filename"
+          placeholder="За замовчуванням — ім'я файлу"
         />
       </div>
 
       <div>
         <label htmlFor="upload-model" className="block text-sm font-medium text-slate-700">
-          LLM model
+          Мовна модель (LLM)
         </label>
         <select
           id="upload-model"
@@ -171,8 +171,8 @@ export function UploadForm({ courseId, disabled, disabledReason }: UploadFormPro
         >
           <option value={DEFAULT_MODEL_KEY}>
             {modelsQuery.data !== undefined
-              ? `Server default (${modelsQuery.data.default})`
-              : 'Server default'}
+              ? `За замовчуванням сервера (${modelsQuery.data.default})`
+              : 'За замовчуванням сервера'}
           </option>
           {(modelsQuery.data?.installed ?? []).map((name) => (
             <option key={name} value={name}>
@@ -181,11 +181,11 @@ export function UploadForm({ courseId, disabled, disabledReason }: UploadFormPro
           ))}
         </select>
         <p className="mt-1 text-xs text-slate-500">
-          Install more with{' '}
+          Встановити нову модель:{' '}
           <code className="rounded bg-slate-100 px-1 py-0.5">ollama pull &lt;name&gt;</code>
           {modelsQuery.data !== undefined && modelsQuery.data.installed.length === 0
-            ? ' — Ollama is running but no models are installed yet.'
-            : ' (e.g. qwen2.5:7b-instruct, llama3.2:3b, phi4).'}
+            ? ' — Ollama працює, але моделі ще не встановлені.'
+            : ' (наприклад qwen2.5:7b-instruct, llama3.2:3b, phi4).'}
         </p>
       </div>
 
@@ -202,7 +202,7 @@ export function UploadForm({ courseId, disabled, disabledReason }: UploadFormPro
           title={disabled && disabledReason !== undefined ? disabledReason : undefined}
           className="rounded bg-status-running px-4 py-2 text-sm font-medium text-white shadow hover:bg-blue-600 disabled:cursor-not-allowed disabled:bg-slate-300"
         >
-          {mutation.isPending ? 'Uploading…' : 'Upload'}
+          {mutation.isPending ? 'Завантаження…' : 'Завантажити'}
         </button>
         {disabled && disabledReason !== undefined ? (
           <p className="text-xs text-slate-500">{disabledReason}</p>

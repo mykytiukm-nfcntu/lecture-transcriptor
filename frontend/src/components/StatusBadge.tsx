@@ -28,42 +28,42 @@ function styleFor(status: LectureStatus): Style {
   switch (status) {
     case 'queued':
       return {
-        label: 'Queued',
+        label: 'У черзі',
         icon: '🕒',
         bgClass: 'bg-status-queued/15',
         textClass: 'text-status-queued',
       };
     case 'normalizing':
       return {
-        label: 'Normalising',
+        label: 'Нормалізація',
         icon: '🎚',
         bgClass: 'bg-status-running/10',
         textClass: 'text-status-running',
       };
     case 'transcribing':
       return {
-        label: 'Transcribing',
+        label: 'Розпізнавання',
         icon: '🎙',
         bgClass: 'bg-status-running/10',
         textClass: 'text-status-running',
       };
     case 'generating':
       return {
-        label: 'Generating notes',
+        label: 'Генерація',
         icon: '🧠',
         bgClass: 'bg-status-running/10',
         textClass: 'text-status-running',
       };
     case 'completed':
       return {
-        label: 'Completed',
+        label: 'Завершено',
         icon: '✅',
         bgClass: 'bg-status-completed/10',
         textClass: 'text-status-completed',
       };
     case 'failed':
       return {
-        label: 'Failed',
+        label: 'Помилка',
         icon: '❌',
         bgClass: 'bg-status-failed/10',
         textClass: 'text-status-failed',
@@ -127,10 +127,10 @@ export function StatusBadge({ lecture }: StatusBadgeProps): ReactElement {
 
   const detail = useMemo<string | null>(() => {
     if (status === 'queued') {
-      return etaSeconds !== null ? `ETA ${formatDuration(etaSeconds)}` : null;
+      return etaSeconds !== null ? `≈ ${formatDuration(etaSeconds)}` : null;
     }
     if (isInProgress) {
-      return elapsed !== null ? `${formatDuration(elapsed)} elapsed` : null;
+      return elapsed !== null ? `${formatDuration(elapsed)} минуло` : null;
     }
     return null;
   }, [status, isInProgress, elapsed, etaSeconds]);
@@ -139,7 +139,7 @@ export function StatusBadge({ lecture }: StatusBadgeProps): ReactElement {
     <span
       className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${style.bgClass} ${style.textClass}`}
       role="status"
-      aria-label={`Status: ${style.label}${detail !== null ? `, ${detail}` : ''}`}
+      aria-label={`Статус: ${style.label}${detail !== null ? `, ${detail}` : ''}`}
     >
       <span aria-hidden="true">{style.icon}</span>
       <span>{style.label}</span>

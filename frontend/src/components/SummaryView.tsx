@@ -26,13 +26,13 @@ function highlightIcon(kind: SummaryHighlightKind): string {
 function highlightLabel(kind: SummaryHighlightKind): string {
   switch (kind) {
     case 'definition':
-      return 'definition';
+      return 'визначення';
     case 'formula':
-      return 'formula';
+      return 'формула';
     case 'example':
-      return 'example';
+      return 'приклад';
     case 'key_point':
-      return 'key point';
+      return 'ключова думка';
   }
 }
 
@@ -112,16 +112,16 @@ export function SummaryView({ lectureId, onSeek }: SummaryViewProps): ReactEleme
     queryFn: () => getSummary(lectureId),
   });
 
-  if (isLoading) return <p className="text-slate-500">Loading summary…</p>;
+  if (isLoading) return <p className="text-slate-500">Завантаження конспекту…</p>;
   if (isError) {
     return (
       <p className="text-status-failed" role="alert">
-        {error instanceof Error ? error.message : 'Failed to load summary.'}
+        {error instanceof Error ? error.message : 'Не вдалося завантажити конспект.'}
       </p>
     );
   }
   if (data === undefined) {
-    return <p className="text-slate-500">Summary is not available.</p>;
+    return <p className="text-slate-500">Конспект недоступний.</p>;
   }
 
   return (
@@ -129,11 +129,11 @@ export function SummaryView({ lectureId, onSeek }: SummaryViewProps): ReactEleme
       <header className="space-y-1 border-b border-slate-200 pb-2">
         <h2 className="text-xl font-semibold text-slate-900">{data.content.title}</h2>
         <p className="text-xs text-slate-500">
-          Language: {data.generation_language} · Prompt: {data.prompt_version}
+          Мова: {data.generation_language} · Промпт: {data.prompt_version}
         </p>
       </header>
       {data.content.sections.length === 0 ? (
-        <p className="text-slate-500">No sections generated.</p>
+        <p className="text-slate-500">Розділи не згенеровано.</p>
       ) : (
         <div className="space-y-4">
           {data.content.sections.map((section, i) => (

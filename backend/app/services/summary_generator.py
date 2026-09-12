@@ -8,6 +8,7 @@ from collections.abc import Callable
 from app.schemas.summary import SummaryDocument
 from app.schemas.transcript import SegmentDraft
 from app.services.chunking import Chunk, format_with_timestamps
+from app.services.languages import language_name
 from app.services.llm import generate_json, render_prompt
 
 logger = logging.getLogger(__name__)
@@ -50,11 +51,13 @@ def generate(
             logger.exception("Summary progress callback raised; continuing")
 
     partials: list[SummaryDocument] = []
+    lang_name = language_name(language)
     for idx, chunk in enumerate(chunks):
         chunk_text = format_with_timestamps(chunk, segments)
         prompt = render_prompt(
             "summary_v1.md.j2",
             language=language,
+            language_name=lang_name,
             chunk_text=chunk_text,
         )
         logger.info(
@@ -75,6 +78,7 @@ def generate(
     reduce_prompt = render_prompt(
         "summary_reduce_v1.md.j2",
         language=language,
+        language_name=lang_name,
         partials_json=partials_json,
         lecture_title=lecture_title,
     )

@@ -22,7 +22,7 @@ function RequireAuth({ children }: RequireAuthProps): ReactElement {
 }
 
 function NotFound(): ReactElement {
-  return <div className="p-6 text-slate-700">404 — page not found.</div>;
+  return <div className="p-6 text-slate-700">404 — сторінку не знайдено.</div>;
 }
 
 export default function App(): ReactElement {

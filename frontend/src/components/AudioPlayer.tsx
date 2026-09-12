@@ -17,7 +17,7 @@ export const AudioPlayer = forwardRef<HTMLAudioElement, AudioPlayerProps>(
         <div
           className="h-14 w-full animate-pulse rounded bg-slate-200"
           role="status"
-          aria-label="Loading audio"
+          aria-label="Завантаження аудіо"
         />
       );
     }
@@ -28,7 +28,7 @@ export const AudioPlayer = forwardRef<HTMLAudioElement, AudioPlayerProps>(
         preload="metadata"
         src={src}
         className="w-full"
-        aria-label="Lecture audio"
+        aria-label="Аудіо лекції"
       />
     );
   },

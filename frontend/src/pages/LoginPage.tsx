@@ -37,11 +37,11 @@ export function LoginPage(): ReactElement {
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center p-6">
       <div className="rounded-lg border border-slate-200 bg-white p-6 shadow">
-        <h1 className="mb-4 text-2xl font-bold text-slate-900">Sign in</h1>
+        <h1 className="mb-4 text-2xl font-bold text-slate-900">Вхід до акаунту</h1>
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <div>
             <label htmlFor="login-username" className="block text-sm font-medium text-slate-700">
-              Username
+              Ім'я користувача
             </label>
             <input
               id="login-username"
@@ -55,7 +55,7 @@ export function LoginPage(): ReactElement {
           </div>
           <div>
             <label htmlFor="login-password" className="block text-sm font-medium text-slate-700">
-              Password
+              Пароль
             </label>
             <input
               id="login-password"
@@ -78,13 +78,13 @@ export function LoginPage(): ReactElement {
             disabled={mutation.isPending}
             className="w-full rounded bg-status-running px-4 py-2 font-medium text-white shadow hover:bg-blue-600 disabled:cursor-not-allowed disabled:bg-slate-300"
           >
-            {mutation.isPending ? 'Signing in…' : 'Sign in'}
+            {mutation.isPending ? 'Вхід…' : 'Увійти'}
           </button>
         </form>
         <p className="mt-4 text-center text-sm text-slate-600">
-          No account?{' '}
+          Немає акаунту?{' '}
           <Link to="/register" className="text-status-running hover:underline">
-            Register
+            Зареєструватися
           </Link>
         </p>
       </div>

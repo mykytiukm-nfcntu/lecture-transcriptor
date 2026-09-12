@@ -1,9 +1,13 @@
 {# summary_v1.md.j2 - Map step of the map-reduce summariser.
    Produces a partial SummaryDocument grounded in a single transcript chunk. #}
+YOU MUST WRITE THE ENTIRE OUTPUT IN {{ language_name | upper }}.
+
 You are a lecture-notes generator. Read the transcript chunk below and produce ONE JSON
 object that captures its content as hierarchical study notes.
 
-Language: {{ language }}. Write ALL headings, bullets, and highlights in {{ language }}.
+Output language: {{ language_name }} (ISO code `{{ language }}`). Write ALL headings,
+bullets, definitions, examples, and highlights in {{ language_name }} — no exceptions,
+even if the transcript itself uses a different language.
 
 Rules:
 - Ground every claim strictly in the provided chunk. Do NOT invent facts, numbers, or examples

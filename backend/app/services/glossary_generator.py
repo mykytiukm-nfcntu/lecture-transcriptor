@@ -7,6 +7,7 @@ from collections.abc import Callable
 from app.schemas.glossary import GlossaryDocument
 from app.schemas.transcript import SegmentDraft
 from app.services.chunking import Chunk, format_with_timestamps
+from app.services.languages import language_name
 from app.services.llm import generate_json, render_prompt
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,7 @@ def generate(
     prompt = render_prompt(
         "glossary_v1.md.j2",
         language=language,
+        language_name=language_name(language),
         transcript_with_timestamps=transcript_repr,
         lecture_title=lecture_title,
     )

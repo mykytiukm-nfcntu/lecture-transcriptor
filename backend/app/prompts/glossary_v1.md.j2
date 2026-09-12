@@ -6,8 +6,12 @@
    from seeing every mention of every term. #}
 You are extracting a domain glossary from the lecture transcript below.
 
+YOU MUST WRITE THE ENTIRE OUTPUT IN {{ language_name | upper }}.
+
 Lecture title: {{ lecture_title }}
-Language: {{ language }}. Write ALL terms and definitions in {{ language }}.
+Output language: {{ language_name }} (ISO code `{{ language }}`). Write ALL terms and
+definitions in {{ language_name }} — no exceptions, even if the transcript itself uses a
+different language.
 
 Rules:
 - Extract BETWEEN 10 AND 30 domain-specific terms that are actually MENTIONED in the transcript.

@@ -1,10 +1,13 @@
 {# summary_reduce_v1.md.j2 - Reduce step. Merges per-chunk partial SummaryDocuments
    into one coherent hierarchical SummaryDocument. #}
+YOU MUST WRITE THE ENTIRE OUTPUT IN {{ language_name | upper }}.
+
 You are merging per-chunk partial lecture notes into ONE coherent hierarchical summary of the
 whole lecture.
 
 Lecture title: {{ lecture_title }}
-Language: {{ language }}. Write the final summary in {{ language }}.
+Output language: {{ language_name }} (ISO code `{{ language }}`). Write the final summary
+entirely in {{ language_name }} — translate any partials that arrived in another language.
 
 Rules:
 - Merge duplicate or overlapping sections and highlights into single entries; preserve every

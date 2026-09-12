@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { getGlossary } from '@/api/lectures';
 import type { GlossaryResponse } from '@/types/api';
-import { formatTimestamp } from '@/utils/format';
+import { formatTimestamp, ukPlural } from '@/utils/format';
 
 interface GlossaryViewProps {
   lectureId: number;
@@ -25,22 +25,24 @@ export function GlossaryView({ lectureId, onSeek }: GlossaryViewProps): ReactEle
     return [...data.entries].sort((a, b) => a.first_mention_seconds - b.first_mention_seconds);
   }, [data]);
 
-  if (isLoading) return <p className="text-slate-500">Loading glossary…</p>;
+  if (isLoading) return <p className="text-slate-500">Завантаження глосарію…</p>;
   if (isError) {
     return (
       <p className="text-status-failed" role="alert">
-        {error instanceof Error ? error.message : 'Failed to load glossary.'}
+        {error instanceof Error ? error.message : 'Не вдалося завантажити глосарій.'}
       </p>
     );
   }
   if (data === undefined || sorted.length === 0) {
-    return <p className="text-slate-500">Glossary is not available.</p>;
+    return <p className="text-slate-500">Глосарій недоступний.</p>;
   }
+
+  const termsWord = ukPlural(sorted.length, 'термін', 'терміни', 'термінів');
 
   return (
     <div className="rounded border border-slate-200 bg-white p-4">
       <p className="mb-3 text-xs text-slate-500">
-        Language: {data.language} · {sorted.length} terms · Prompt: {data.prompt_version}
+        Мова: {data.language} · {sorted.length} {termsWord} · Промпт: {data.prompt_version}
       </p>
       <dl className="space-y-4">
         {sorted.map((entry) => (
@@ -51,7 +53,7 @@ export function GlossaryView({ lectureId, onSeek }: GlossaryViewProps): ReactEle
                 type="button"
                 onClick={() => onSeek(entry.first_mention_seconds)}
                 className="font-mono text-xs text-status-running hover:underline focus:underline focus:outline-none"
-                aria-label={`Seek to first mention of ${entry.term}`}
+                aria-label={`Перейти до першої згадки терміна ${entry.term}`}
               >
                 [{formatTimestamp(entry.first_mention_seconds)}]
               </button>

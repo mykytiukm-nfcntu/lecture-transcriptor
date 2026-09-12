@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { getTranscript } from '@/api/lectures';
 import type { TranscriptResponse } from '@/types/api';
-import { formatTimestamp } from '@/utils/format';
+import { formatTimestamp, ukPlural } from '@/utils/format';
 
 interface TranscriptViewProps {
   lectureId: number;
@@ -17,23 +17,25 @@ export function TranscriptView({ lectureId, onSeek }: TranscriptViewProps): Reac
   });
 
   if (isLoading) {
-    return <p className="text-slate-500">Loading transcript…</p>;
+    return <p className="text-slate-500">Завантаження транскрипту…</p>;
   }
   if (isError) {
     return (
       <p className="text-status-failed" role="alert">
-        {error instanceof Error ? error.message : 'Failed to load transcript.'}
+        {error instanceof Error ? error.message : 'Не вдалося завантажити транскрипт.'}
       </p>
     );
   }
   if (data === undefined || data.segments.length === 0) {
-    return <p className="text-slate-500">No transcript segments available.</p>;
+    return <p className="text-slate-500">Сегменти транскрипту відсутні.</p>;
   }
+
+  const segmentsWord = ukPlural(data.segments.length, 'сегмент', 'сегменти', 'сегментів');
 
   return (
     <div className="rounded border border-slate-200 bg-white p-3">
       <p className="mb-2 text-xs text-slate-500">
-        Language: {data.language} · {data.segments.length} segments
+        Мова: {data.language} · {data.segments.length} {segmentsWord}
       </p>
       <ol className="max-h-[60vh] space-y-1 overflow-y-auto pr-1">
         {data.segments.map((segment) => (

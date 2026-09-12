@@ -9,7 +9,7 @@ import { deleteLecture, listLectures } from '@/api/lectures';
 import { StatusBadge } from '@/components/StatusBadge';
 import { UploadForm } from '@/components/UploadForm';
 import type { CourseResponse, LectureListItem, LectureStatus } from '@/types/api';
-import { formatDateTime, formatDuration } from '@/utils/format';
+import { formatDateTime, formatDuration, ukPlural } from '@/utils/format';
 
 const IN_PROGRESS: readonly LectureStatus[] = [
   'queued',
@@ -53,9 +53,9 @@ export function CourseDetailPage(): ReactElement {
   if (!validId) {
     return (
       <main className="mx-auto max-w-4xl space-y-2 p-6">
-        <p className="text-status-failed">Invalid course id.</p>
+        <p className="text-status-failed">Некоректний ідентифікатор курсу.</p>
         <Link to="/courses" className="text-status-running hover:underline">
-          ← Back to courses
+          ← Назад до курсів
         </Link>
       </main>
     );
@@ -73,15 +73,15 @@ export function CourseDetailPage(): ReactElement {
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-5xl flex-col gap-1 px-6 py-4">
           <Link to="/courses" className="text-sm text-status-running hover:underline">
-            ← All courses
+            ← Усі курси
           </Link>
           <h1 className="text-xl font-bold text-slate-900">
-            {courseQuery.data?.title ?? 'Course'}
+            {courseQuery.data?.title ?? 'Курс'}
           </h1>
           {courseQuery.data !== undefined ? (
             <p className="text-xs text-slate-500">
               {courseQuery.data.lecture_count}{' '}
-              {courseQuery.data.lecture_count === 1 ? 'lecture' : 'lectures'} · created{' '}
+              {ukPlural(courseQuery.data.lecture_count, 'лекція', 'лекції', 'лекцій')} · створено{' '}
               {formatDateTime(courseQuery.data.created_at)}
             </p>
           ) : null}
@@ -91,14 +91,14 @@ export function CourseDetailPage(): ReactElement {
       <main className="mx-auto max-w-5xl space-y-6 px-6 py-8">
         <section aria-labelledby="upload-heading" className="space-y-2">
           <h2 id="upload-heading" className="text-lg font-semibold text-slate-900">
-            Upload a lecture
+            Завантажити лекцію
           </h2>
           <UploadForm
             courseId={courseId}
             disabled={anyInProgress}
             disabledReason={
               anyInProgress
-                ? 'Another transcription is currently running. Please wait for it to finish.'
+                ? 'Наразі виконується інша транскрипція. Зачекайте, поки вона завершиться.'
                 : undefined
             }
           />
@@ -106,7 +106,7 @@ export function CourseDetailPage(): ReactElement {
 
         <section aria-labelledby="lectures-heading" className="space-y-3">
           <h2 id="lectures-heading" className="text-lg font-semibold text-slate-900">
-            Lectures
+            Лекції
           </h2>
           {deleteError !== null ? (
             <p className="text-sm text-status-failed" role="alert">
@@ -114,16 +114,16 @@ export function CourseDetailPage(): ReactElement {
             </p>
           ) : null}
           {lecturesQuery.isLoading ? (
-            <p className="text-slate-500">Loading lectures…</p>
+            <p className="text-slate-500">Завантаження лекцій…</p>
           ) : lecturesQuery.isError ? (
             <p className="text-status-failed" role="alert">
               {lecturesQuery.error instanceof Error
                 ? lecturesQuery.error.message
-                : 'Failed to load lectures.'}
+                : 'Не вдалося завантажити лекції.'}
             </p>
           ) : lecturesQuery.data === undefined || lecturesQuery.data.length === 0 ? (
             <p className="rounded border border-dashed border-slate-300 bg-white p-6 text-center text-slate-500">
-              No lectures yet. Upload an audio file above to create one.
+              Лекцій ще немає. Завантажте аудіофайл вище.
             </p>
           ) : (
             <ul className="space-y-2">
@@ -144,12 +144,12 @@ export function CourseDetailPage(): ReactElement {
                     </div>
                     <p className="text-xs text-slate-500">
                       {formatDuration(lecture.duration_seconds)} ·{' '}
-                      {lecture.language ?? 'language pending'} · uploaded{' '}
+                      {lecture.language ?? 'визначення мови…'} · завантажено{' '}
                       {formatDateTime(lecture.created_at)}
                     </p>
                     {lecture.error_message !== null ? (
                       <p className="text-xs text-status-failed">
-                        Error: {lecture.error_message}
+                        Помилка: {lecture.error_message}
                       </p>
                     ) : null}
                   </div>
@@ -158,20 +158,20 @@ export function CourseDetailPage(): ReactElement {
                       to={`/lectures/${lecture.id}`}
                       className="rounded border border-slate-300 px-3 py-1 text-sm hover:bg-slate-100"
                     >
-                      View
+                      Переглянути
                     </Link>
                     <button
                       type="button"
                       onClick={() => {
                         const ok = window.confirm(
-                          `Delete lecture “${lecture.title}”? This cannot be undone.`,
+                          `Видалити лекцію «${lecture.title}»? Це неворотно.`,
                         );
                         if (ok) deleteMutation.mutate(lecture.id);
                       }}
                       disabled={deleteMutation.isPending}
                       className="rounded border border-status-failed/50 px-3 py-1 text-sm text-status-failed hover:bg-status-failed/10 disabled:opacity-50"
                     >
-                      Delete
+                      Видалити
                     </button>
                   </div>
                 </li>

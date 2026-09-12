@@ -74,7 +74,7 @@ export function LectureViewerPage(): ReactElement {
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        setAudioError(err instanceof Error ? err.message : 'Failed to load audio.');
+        setAudioError(err instanceof Error ? err.message : 'Не вдалося завантажити аудіо.');
       });
     return () => {
       cancelled = true;
@@ -110,16 +110,16 @@ export function LectureViewerPage(): ReactElement {
   if (!validId) {
     return (
       <main className="mx-auto max-w-4xl space-y-2 p-6">
-        <p className="text-status-failed">Invalid lecture id.</p>
+        <p className="text-status-failed">Некоректний ідентифікатор лекції.</p>
         <Link to="/courses" className="text-status-running hover:underline">
-          ← Back to courses
+          ← Назад до курсів
         </Link>
       </main>
     );
   }
 
   if (lectureQuery.isLoading) {
-    return <main className="mx-auto max-w-4xl p-6 text-slate-500">Loading lecture…</main>;
+    return <main className="mx-auto max-w-4xl p-6 text-slate-500">Завантаження лекції…</main>;
   }
   if (lectureQuery.isError || lecture === undefined) {
     return (
@@ -127,10 +127,10 @@ export function LectureViewerPage(): ReactElement {
         <p className="text-status-failed" role="alert">
           {lectureQuery.error instanceof Error
             ? lectureQuery.error.message
-            : 'Failed to load lecture.'}
+            : 'Не вдалося завантажити лекцію.'}
         </p>
         <Link to="/courses" className="text-status-running hover:underline">
-          ← Back to courses
+          ← Назад до курсів
         </Link>
       </main>
     );
@@ -143,7 +143,7 @@ export function LectureViewerPage(): ReactElement {
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-5xl flex-col gap-2 px-6 py-4">
           <Link to={backLink} className="text-sm text-status-running hover:underline">
-            ← Back to course
+            ← Назад до курсу
           </Link>
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-xl font-bold text-slate-900">{lecture.title}</h1>
@@ -151,7 +151,7 @@ export function LectureViewerPage(): ReactElement {
           </div>
           <p className="text-sm text-slate-500">
             {formatDuration(lecture.duration_seconds)} ·{' '}
-            {lecture.language ?? 'language pending'} · file {lecture.original_filename}
+            {lecture.language ?? 'визначення мови…'} · файл {lecture.original_filename}
           </p>
         </div>
       </header>
@@ -159,10 +159,9 @@ export function LectureViewerPage(): ReactElement {
       <main className="mx-auto max-w-5xl space-y-6 px-6 py-8">
         {isInProgress ? (
           <section className="space-y-3 rounded border border-slate-200 bg-white p-6 text-center shadow-sm">
-            <h2 className="text-lg font-semibold text-slate-900">Processing your lecture</h2>
+            <h2 className="text-lg font-semibold text-slate-900">Обробка лекції</h2>
             <p className="text-sm text-slate-600">
-              This page refreshes automatically when the transcript is ready. You can leave and
-              come back — processing continues in the background.
+              Ця сторінка оновиться автоматично, коли транскрипт буде готовий. Можна закрити вкладку — обробка триває у фоні.
             </p>
             <ProgressBar percent={statusQuery.data?.progress_percent ?? null} />
             <div className="inline-flex">
@@ -171,17 +170,17 @@ export function LectureViewerPage(): ReactElement {
           </section>
         ) : isFailed ? (
           <section className="rounded border border-status-failed/40 bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-status-failed">Processing failed</h2>
+            <h2 className="text-lg font-semibold text-status-failed">Помилка обробки</h2>
             {lecture.error_message !== null ? (
               <p className="mt-1 text-sm text-slate-700">{lecture.error_message}</p>
             ) : null}
             <p className="mt-2 text-sm text-slate-600">
-              Delete this lecture and upload the audio again to retry.
+              Видаліть цю лекцію та завантажте аудіо знову, щоб спробувати ще раз.
             </p>
           </section>
         ) : isCompleted ? (
           <>
-            <section aria-label="Audio player" className="space-y-2">
+            <section aria-label="Аудіоплеєр" className="space-y-2">
               {audioError !== null ? (
                 <p className="text-sm text-status-failed" role="alert">
                   {audioError}
@@ -190,15 +189,15 @@ export function LectureViewerPage(): ReactElement {
               <AudioPlayer ref={audioRef} src={audioSrc} />
             </section>
 
-            <section aria-label="Export" className="flex flex-wrap items-center gap-2">
-              <span className="text-sm text-slate-600">Export:</span>
+            <section aria-label="Експорт" className="flex flex-wrap items-center gap-2">
+              <span className="text-sm text-slate-600">Експорт:</span>
               <button
                 type="button"
                 onClick={() => exportMutation.mutate('txt')}
                 disabled={exportMutation.isPending}
                 className="rounded border border-slate-300 bg-white px-3 py-1 text-sm hover:bg-slate-100 disabled:opacity-50"
               >
-                Download TXT
+                Завантажити TXT
               </button>
               <button
                 type="button"
@@ -206,7 +205,7 @@ export function LectureViewerPage(): ReactElement {
                 disabled={exportMutation.isPending}
                 className="rounded border border-slate-300 bg-white px-3 py-1 text-sm hover:bg-slate-100 disabled:opacity-50"
               >
-                Download PDF
+                Завантажити PDF
               </button>
               {exportError !== null ? (
                 <p className="text-sm text-status-failed" role="alert">
@@ -215,20 +214,20 @@ export function LectureViewerPage(): ReactElement {
               ) : null}
             </section>
 
-            <section aria-label="Lecture content" className="space-y-3">
+            <section aria-label="Вміст лекції" className="space-y-3">
               <div
                 role="tablist"
-                aria-label="Lecture views"
+                aria-label="Вкладки лекції"
                 className="flex gap-1 border-b border-slate-200"
               >
                 <TabButton current={tab} value="transcript" onSelect={setTab}>
-                  Transcript
+                  Транскрипт
                 </TabButton>
                 <TabButton current={tab} value="summary" onSelect={setTab}>
-                  Summary
+                  Конспект
                 </TabButton>
                 <TabButton current={tab} value="glossary" onSelect={setTab}>
-                  Glossary
+                  Глосарій
                 </TabButton>
               </div>
               <div>
@@ -298,7 +297,7 @@ function ProgressBar({ percent }: ProgressBarProps): ReactElement {
         />
       </div>
       <p className="text-xs text-slate-500">
-        {clamped === null ? 'Preparing…' : `${clamped.toFixed(0)}% of current stage`}
+        {clamped === null ? 'Підготовка…' : `${clamped.toFixed(0)}% поточного етапу`}
       </p>
     </div>
   );
