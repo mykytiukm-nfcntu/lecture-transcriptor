@@ -1,0 +1,44 @@
+{# summary_reduce_v1.md.j2 - Reduce step. Merges per-chunk partial SummaryDocuments
+   into one coherent hierarchical SummaryDocument. #}
+You are merging per-chunk partial lecture notes into ONE coherent hierarchical summary of the
+whole lecture.
+
+Lecture title: {{ lecture_title }}
+Language: {{ language }}. Write the final summary in {{ language }}.
+
+Rules:
+- Merge duplicate or overlapping sections and highlights into single entries; preserve every
+  distinct point mentioned in the partials.
+- For each merged section, keep the EARLIEST `timestamp_seconds` observed across the partials
+  that contributed to it.
+- Do NOT add facts that are absent from the partials. This is a merge, not an expansion.
+- Reorder sections chronologically by `timestamp_seconds` when the ordering across partials
+  is ambiguous.
+- Respect the target schema exactly; every field is required unless it is a list, which may be empty.
+- Return VALID JSON ONLY. No Markdown, no commentary, no prose outside the JSON.
+
+Target schema (`SummaryDocument`):
+{
+  "title": string,                       // reuse or lightly refine the lecture title
+  "language": "{{ language }}",
+  "sections": [
+    {
+      "heading": string,
+      "timestamp_seconds": number,
+      "bullets": [string, ...],
+      "highlights": [
+        {
+          "kind": "definition" | "formula" | "example" | "key_point",
+          "text": string,
+          "timestamp_seconds": number
+        }
+      ],
+      "subsections": [ /* same shape as a section, may be empty */ ]
+    }
+  ]
+}
+
+Partial summaries produced by the map step (JSON array of `SummaryDocument`):
+{{ partials_json }}
+
+Return valid JSON only.

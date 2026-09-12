@@ -1,0 +1,38 @@
+{# glossary_v1.md.j2 - Extract 10-30 domain glossary terms grounded in the transcript.
+   Input choice: the generator passes the FULL transcript with inline [HH:MM:SS] markers when
+   it fits in the model's context. If the transcript would blow the context window, the
+   generator concatenates the per-chunk timestamped texts and elides the middle third with
+   `[...omitted...]`. Whole-transcript context is preferred because glossary extraction benefits
+   from seeing every mention of every term. #}
+You are extracting a domain glossary from the lecture transcript below.
+
+Lecture title: {{ lecture_title }}
+Language: {{ language }}. Write ALL terms and definitions in {{ language }}.
+
+Rules:
+- Extract BETWEEN 10 AND 30 domain-specific terms that are actually MENTIONED in the transcript.
+- Skip generic vocabulary and stopwords; focus on terminology a student would want to look up.
+- For each term, write a 1-3 sentence definition grounded in the transcript. Do NOT invent
+  facts or borrow from outside knowledge; if the transcript does not define the term precisely,
+  paraphrase the transcript's usage.
+- `first_mention_seconds` MUST be the timestamp of the FIRST occurrence of the term, taken from
+  the `[HH:MM:SS]` markers.
+- Do not include duplicate terms. If a term appears in multiple forms, pick the canonical form.
+- Return VALID JSON ONLY. No Markdown, no commentary, no prose outside the JSON.
+
+Target schema (`GlossaryDocument`):
+{
+  "language": "{{ language }}",
+  "entries": [                           // MUST contain 10 to 30 entries, inclusive
+    {
+      "term": string,
+      "definition": string,              // 1 to 3 sentences
+      "first_mention_seconds": number
+    }
+  ]
+}
+
+Transcript (each line is a segment prefixed with its `[HH:MM:SS]` timestamp):
+{{ transcript_with_timestamps }}
+
+Return valid JSON only.
