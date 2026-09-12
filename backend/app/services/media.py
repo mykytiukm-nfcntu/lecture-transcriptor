@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 from typing import IO
 
@@ -112,25 +113,79 @@ def probe_duration(path: Path) -> float:
         raise MediaProbeError(f"ffprobe returned unparseable output: {exc}") from exc
 
 
-def normalise(path_in: Path, path_out: Path) -> None:
-    """Downmix to mono, resample to 16 kHz, apply loudness normalisation, write to `path_out`."""
+def normalise(
+    path_in: Path,
+    path_out: Path,
+    *,
+    total_seconds: float | None = None,
+    on_progress: Callable[[float, float], None] | None = None,
+) -> None:
+    """Downmix to mono, resample to 16 kHz, apply loudness normalisation, write to `path_out`.
+
+    When `total_seconds` and `on_progress` are both supplied, ffmpeg is invoked with
+    `-progress pipe:1 -nostats` and the callback is fired with `(current_seconds, total_seconds)`
+    every time ffmpeg publishes a frame update.
+    """
     path_out.parent.mkdir(parents=True, exist_ok=True)
-    cmd = [
+    stream_progress = on_progress is not None and total_seconds is not None and total_seconds > 0
+    cmd: list[str] = [
         "ffmpeg", "-y",
         "-i", str(path_in),
         "-ac", "1",
         "-ar", "16000",
         "-af", "loudnorm",
-        str(path_out),
     ]
+    if stream_progress:
+        cmd += ["-progress", "pipe:1", "-nostats"]
+    cmd += [str(path_out)]
+
+    if not stream_progress:
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, text=True)
+        except FileNotFoundError as exc:
+            raise MediaNormaliseError("ffmpeg not found on PATH") from exc
+        except subprocess.CalledProcessError as exc:
+            stderr = (exc.stderr or "").strip()
+            logger.error("ffmpeg normalise failed for %s: %s", path_in, stderr)
+            raise MediaNormaliseError(f"ffmpeg normalise failed: {stderr}") from exc
+        return
+
+    assert on_progress is not None and total_seconds is not None  # narrow types for mypy
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
     except FileNotFoundError as exc:
         raise MediaNormaliseError("ffmpeg not found on PATH") from exc
-    except subprocess.CalledProcessError as exc:
-        stderr = (exc.stderr or "").strip()
+
+    try:
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            line = line.strip()
+            if not line.startswith("out_time_us="):
+                continue
+            _, _, value = line.partition("=")
+            try:
+                current = int(value) / 1_000_000.0
+            except ValueError:
+                continue
+            try:
+                on_progress(current, total_seconds)
+            except Exception:  # noqa: BLE001 - progress reporting must never break ffmpeg.
+                logger.exception("Progress callback raised; continuing normalisation")
+        rc = proc.wait()
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+    if rc != 0:
+        stderr = proc.stderr.read().strip() if proc.stderr else ""
         logger.error("ffmpeg normalise failed for %s: %s", path_in, stderr)
-        raise MediaNormaliseError(f"ffmpeg normalise failed: {stderr}") from exc
+        raise MediaNormaliseError(f"ffmpeg normalise failed: {stderr[:500]}")
 
 
 def estimated_processing_seconds(duration_seconds: float) -> float:

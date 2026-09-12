@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 
 from app.schemas.summary import SummaryDocument
 from app.schemas.transcript import SegmentDraft
@@ -16,18 +17,36 @@ logger = logging.getLogger(__name__)
 PROMPT_VERSION = "summary_v1"
 
 
+def step_count(chunks: list[Chunk]) -> int:
+    """Number of LLM calls `generate` will make for the given chunk list."""
+    if not chunks:
+        return 0
+    if len(chunks) == 1:
+        return 1
+    return len(chunks) + 1
+
+
 def generate(
     chunks: list[Chunk],
     segments: list[SegmentDraft],
     *,
     language: str,
     lecture_title: str,
+    on_step: Callable[[], None] | None = None,
 ) -> SummaryDocument:
     """Produce the final `SummaryDocument` from `chunks` via map + reduce."""
     if not chunks:
         # Nothing to summarise. Return an empty document rather than raising: callers can
         # persist it just fine and the API will render an empty summary section.
         return SummaryDocument(title=lecture_title, language=language, sections=[])
+
+    def _tick() -> None:
+        if on_step is None:
+            return
+        try:
+            on_step()
+        except Exception:  # noqa: BLE001 - progress reporting must never break generation.
+            logger.exception("Summary progress callback raised; continuing")
 
     partials: list[SummaryDocument] = []
     for idx, chunk in enumerate(chunks):
@@ -43,6 +62,7 @@ def generate(
         )
         partial = generate_json(prompt, schema=SummaryDocument)
         partials.append(partial)
+        _tick()
 
     if len(partials) == 1:
         return partials[0]
@@ -58,4 +78,6 @@ def generate(
         lecture_title=lecture_title,
     )
     logger.info("Summary reduce step", extra={"partial_count": len(partials)})
-    return generate_json(reduce_prompt, schema=SummaryDocument)
+    result = generate_json(reduce_prompt, schema=SummaryDocument)
+    _tick()
+    return result

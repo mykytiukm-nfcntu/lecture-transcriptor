@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 from app.schemas.glossary import GlossaryDocument
 from app.schemas.transcript import SegmentDraft
@@ -11,6 +12,8 @@ from app.services.llm import generate_json, render_prompt
 logger = logging.getLogger(__name__)
 
 PROMPT_VERSION = "glossary_v1"
+
+STEP_COUNT = 1
 
 # Rough character budget for the transcript block inside the prompt. Chosen to fit inside a
 # 4-8k token context after the surrounding instructions. If the concatenated timestamped
@@ -34,6 +37,7 @@ def generate(
     *,
     language: str,
     lecture_title: str,
+    on_step: Callable[[], None] | None = None,
 ) -> GlossaryDocument:
     """Produce the `GlossaryDocument` (10-30 entries) for the lecture."""
     transcript_repr = _build_transcript_repr(chunks, segments)
@@ -44,4 +48,10 @@ def generate(
         lecture_title=lecture_title,
     )
     logger.info("Glossary generation", extra={"chunk_count": len(chunks)})
-    return generate_json(prompt, schema=GlossaryDocument)
+    result = generate_json(prompt, schema=GlossaryDocument)
+    if on_step is not None:
+        try:
+            on_step()
+        except Exception:  # noqa: BLE001 - progress reporting must never break generation.
+            logger.exception("Glossary progress callback raised; ignoring")
+    return result

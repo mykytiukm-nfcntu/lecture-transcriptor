@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session as DBSession
 
 from app.api.deps import get_current_user
 from app.core.db import get_db
+from app.core.progress import get_progress
 from app.models.glossary import GlossaryTerm
 from app.models.lecture import Lecture, LectureStatus
 from app.models.summary import Summary
@@ -147,6 +148,12 @@ def get_status(
         else None
     )
 
+    progress_percent: float | None = None
+    if lecture.status in _ACTIVE_STATUSES:
+        snapshot = get_progress(lecture_id)
+        if snapshot is not None:
+            progress_percent = snapshot.percent
+
     return LectureStatusResponse(
         id=lecture.id,
         status=lecture.status,
@@ -155,4 +162,5 @@ def get_status(
         error_message=lecture.error_message,
         elapsed_seconds=elapsed,
         preliminary_eta_seconds=eta,
+        progress_percent=progress_percent,
     )

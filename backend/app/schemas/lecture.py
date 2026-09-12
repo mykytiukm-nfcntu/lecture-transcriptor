@@ -35,6 +35,7 @@ class LectureStatusResponse(BaseModel):
     started_at: datetime | None
     finished_at: datetime | None
     error_message: str | None
-    # Both computed by the API layer, not mapped columns.
+    # All three computed by the API layer, not mapped columns.
     elapsed_seconds: float | None
     preliminary_eta_seconds: float | None
+    progress_percent: float | None = None

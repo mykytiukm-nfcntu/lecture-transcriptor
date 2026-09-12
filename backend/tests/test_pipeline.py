@@ -149,7 +149,7 @@ def test_pipeline_asr_failure_marks_failed(
 
     from app.services import asr as asr_module
 
-    def _boom(_path: Path) -> None:
+    def _boom(_path: Path, **_kwargs: Any) -> None:
         raise asr_module.AsrError("simulated whisper explosion")
 
     monkeypatch.setattr(asr_module, "transcribe", _boom)

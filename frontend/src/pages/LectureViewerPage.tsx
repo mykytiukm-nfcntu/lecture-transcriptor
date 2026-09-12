@@ -164,6 +164,7 @@ export function LectureViewerPage(): ReactElement {
               This page refreshes automatically when the transcript is ready. You can leave and
               come back — processing continues in the background.
             </p>
+            <ProgressBar percent={statusQuery.data?.progress_percent ?? null} />
             <div className="inline-flex">
               <StatusBadge lecture={lecture} />
             </div>
@@ -270,5 +271,35 @@ function TabButton({ current, value, onSelect, children }: TabButtonProps): Reac
     >
       {children}
     </button>
+  );
+}
+
+interface ProgressBarProps {
+  percent: number | null;
+}
+
+function ProgressBar({ percent }: ProgressBarProps): ReactElement {
+  const clamped = percent === null ? null : Math.max(0, Math.min(100, percent));
+  const width = clamped ?? 0;
+  return (
+    <div className="mx-auto max-w-md space-y-1">
+      <div
+        className="h-2 w-full overflow-hidden rounded-full bg-slate-200"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={clamped ?? undefined}
+      >
+        <div
+          className={`h-full bg-status-running transition-[width] duration-500 ${
+            clamped === null ? 'animate-pulse' : ''
+          }`}
+          style={{ width: `${clamped === null ? 100 : width}%` }}
+        />
+      </div>
+      <p className="text-xs text-slate-500">
+        {clamped === null ? 'Preparing…' : `${clamped.toFixed(0)}% of current stage`}
+      </p>
+    </div>
   );
 }

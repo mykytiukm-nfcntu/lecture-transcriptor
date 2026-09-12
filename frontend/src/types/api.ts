@@ -61,6 +61,7 @@ export interface LectureStatusResponse {
   error_message: string | null;
   elapsed_seconds: number | null;
   preliminary_eta_seconds: number | null;
+  progress_percent: number | null;
 }
 
 export interface TranscriptSegment {

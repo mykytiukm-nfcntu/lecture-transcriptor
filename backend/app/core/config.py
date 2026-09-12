@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     WHISPER_VAD: bool = True
     WHISPER_FALLBACK_LANGUAGE: str = "uk"
     WHISPER_LANGUAGE_DETECT_MIN_PROB: float = 0.5
+    # 0 = auto (all logical cores). Otherwise pin to the given count.
+    WHISPER_CPU_THREADS: int = 0
 
     CORS_ORIGINS: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
 

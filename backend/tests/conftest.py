@@ -15,7 +15,7 @@ import secrets
 import shutil
 import sys
 import wave
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
@@ -220,7 +220,7 @@ def fake_ffmpeg(monkeypatch: pytest.MonkeyPatch) -> None:
     def _fake_probe(_path: Path) -> float:
         return 10.0
 
-    def _fake_normalise(path_in: Path, path_out: Path) -> None:
+    def _fake_normalise(path_in: Path, path_out: Path, **_kwargs: Any) -> None:
         path_out.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(path_in, path_out)
 
@@ -234,7 +234,11 @@ def mock_asr(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.schemas.transcript import SegmentDraft
     from app.services import asr as asr_module
 
-    def _fake_transcribe(_path: Path) -> tuple[list[SegmentDraft], str]:
+    def _fake_transcribe(
+        _path: Path,
+        *,
+        on_progress: Callable[[float, float], None] | None = None,
+    ) -> tuple[list[SegmentDraft], str]:
         segments = [
             SegmentDraft(
                 index=0,
@@ -251,6 +255,9 @@ def mock_asr(monkeypatch: pytest.MonkeyPatch) -> None:
                 confidence=-0.25,
             ),
         ]
+        if on_progress is not None:
+            for seg in segments:
+                on_progress(seg.end_seconds, 10.0)
         return segments, "uk"
 
     monkeypatch.setattr(asr_module, "transcribe", _fake_transcribe)

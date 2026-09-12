@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session as DBSession
 from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.core.logging import correlation_id
+from app.core.progress import clear_progress, set_progress
 from app.models.glossary import GlossaryTerm
 from app.models.lecture import Lecture, LectureStatus
 from app.models.summary import Summary
@@ -62,6 +63,7 @@ def process_lecture(lecture_id: int, generation_language: str | None = None) -> 
         lecture.error_message = None
         lecture.status = LectureStatus.normalizing
         db.commit()
+        set_progress(lecture_id, 0.0)
 
         original_path = _find_original(lecture.user_id, lecture.id)
         if original_path is None:
@@ -69,17 +71,32 @@ def process_lecture(lecture_id: int, generation_language: str | None = None) -> 
             return
 
         normalized_path = original_path.parent / "normalized.wav"
+
+        def _on_norm_progress(current: float, total: float) -> None:
+            set_progress(lecture_id, (current / total) * 100.0)
+
         try:
-            media.normalise(original_path, normalized_path)
+            media.normalise(
+                original_path,
+                normalized_path,
+                total_seconds=lecture.duration_seconds,
+                on_progress=_on_norm_progress,
+            )
         except media.MediaError as exc:
             _mark_failed(db, lecture, f"Normalisation failed: {exc}")
             return
 
         lecture.status = LectureStatus.transcribing
         db.commit()
+        set_progress(lecture_id, 0.0)
+
+        def _on_asr_progress(current: float, total: float) -> None:
+            set_progress(lecture_id, (current / total) * 100.0)
 
         try:
-            segment_drafts, detected_language = asr.transcribe(normalized_path)
+            segment_drafts, detected_language = asr.transcribe(
+                normalized_path, on_progress=_on_asr_progress
+            )
         except asr.AsrError as exc:
             _mark_failed(db, lecture, f"Transcription failed: {exc}")
             return
@@ -111,6 +128,7 @@ def process_lecture(lecture_id: int, generation_language: str | None = None) -> 
 
         lecture.status = LectureStatus.generating
         db.commit()
+        set_progress(lecture_id, 0.0)
 
         settings = get_settings()
         chunks = chunking.chunk_segments(
@@ -121,12 +139,22 @@ def process_lecture(lecture_id: int, generation_language: str | None = None) -> 
 
         resolved_language = generation_language or detected_language
 
+        gen_total = summary_generator.step_count(chunks) + glossary_generator.STEP_COUNT
+        gen_done = 0
+
+        def _on_gen_step() -> None:
+            nonlocal gen_done
+            gen_done += 1
+            if gen_total > 0:
+                set_progress(lecture_id, (gen_done / gen_total) * 100.0)
+
         try:
             summary_doc = summary_generator.generate(
                 chunks,
                 segment_drafts,
                 language=resolved_language,
                 lecture_title=lecture.title,
+                on_step=_on_gen_step,
             )
         except llm.LlmGenerationError as exc:
             _mark_failed(db, lecture, f"Summary generation failed: {exc}")
@@ -138,10 +166,12 @@ def process_lecture(lecture_id: int, generation_language: str | None = None) -> 
                 segment_drafts,
                 language=resolved_language,
                 lecture_title=lecture.title,
+                on_step=_on_gen_step,
             )
         except llm.LlmGenerationError as exc:
             _mark_failed(db, lecture, f"Glossary generation failed: {exc}")
             return
+        set_progress(lecture_id, 100.0)
 
         db.add(
             Summary(
@@ -178,4 +208,5 @@ def process_lecture(lecture_id: int, generation_language: str | None = None) -> 
         except Exception:
             logger.exception("Failed to record failure state for lecture %d", lecture_id)
     finally:
+        clear_progress(lecture_id)
         db.close()
