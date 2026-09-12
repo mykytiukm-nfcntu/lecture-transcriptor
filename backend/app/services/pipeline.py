@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session as DBSession
 from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.core.logging import correlation_id
-from app.core.progress import clear_progress, set_progress
+from app.core.progress import clear_progress, set_progress, set_stage
 from app.models.glossary import GlossaryTerm
 from app.models.lecture import Lecture, LectureStatus
 from app.models.summary import Summary
@@ -134,7 +134,6 @@ def process_lecture(
 
         lecture.status = LectureStatus.generating
         db.commit()
-        set_progress(lecture_id, 0.0)
 
         settings = get_settings()
         chunks = chunking.chunk_segments(
@@ -145,41 +144,33 @@ def process_lecture(
 
         resolved_language = generation_language or detected_language
 
-        gen_total = summary_generator.step_count(chunks) + glossary_generator.STEP_COUNT
-        gen_done = 0
-
-        def _on_gen_step() -> None:
-            nonlocal gen_done
-            gen_done += 1
-            if gen_total > 0:
-                set_progress(lecture_id, (gen_done / gen_total) * 100.0)
-
+        # LLM generation is two coarse steps. The frontend renders these as a
+        # "Step 1 of 2" / "Step 2 of 2" indicator instead of a moving percent.
+        set_stage(lecture_id, "summary")
         try:
             summary_doc = summary_generator.generate(
                 chunks,
                 segment_drafts,
                 language=resolved_language,
                 lecture_title=lecture.title,
-                on_step=_on_gen_step,
                 model=model,
             )
         except llm.LlmGenerationError as exc:
             _mark_failed(db, lecture, f"Summary generation failed: {exc}")
             return
 
+        set_stage(lecture_id, "glossary")
         try:
             glossary_doc = glossary_generator.generate(
                 chunks,
                 segment_drafts,
                 language=resolved_language,
                 lecture_title=lecture.title,
-                on_step=_on_gen_step,
                 model=model,
             )
         except llm.LlmGenerationError as exc:
             _mark_failed(db, lecture, f"Glossary generation failed: {exc}")
             return
-        set_progress(lecture_id, 100.0)
 
         db.add(
             Summary(

@@ -149,10 +149,12 @@ def get_status(
     )
 
     progress_percent: float | None = None
+    progress_stage: str | None = None
     if lecture.status in _ACTIVE_STATUSES:
         snapshot = get_progress(lecture_id)
         if snapshot is not None:
             progress_percent = snapshot.percent
+            progress_stage = snapshot.stage
 
     return LectureStatusResponse(
         id=lecture.id,
@@ -163,4 +165,5 @@ def get_status(
         elapsed_seconds=elapsed,
         preliminary_eta_seconds=eta,
         progress_percent=progress_percent,
+        progress_stage=progress_stage,
     )

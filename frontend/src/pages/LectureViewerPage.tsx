@@ -163,7 +163,11 @@ export function LectureViewerPage(): ReactElement {
             <p className="text-sm text-slate-600">
               Ця сторінка оновиться автоматично, коли транскрипт буде готовий. Можна закрити вкладку — обробка триває у фоні.
             </p>
-            <ProgressBar percent={statusQuery.data?.progress_percent ?? null} />
+            {statusQuery.data?.status === 'generating' ? (
+              <GenerationStageIndicator stage={statusQuery.data.progress_stage} />
+            ) : (
+              <ProgressBar percent={statusQuery.data?.progress_percent ?? null} />
+            )}
             <div className="inline-flex">
               <StatusBadge lecture={lecture} />
             </div>
@@ -299,6 +303,73 @@ function ProgressBar({ percent }: ProgressBarProps): ReactElement {
       <p className="text-xs text-slate-500">
         {clamped === null ? 'Підготовка…' : `${clamped.toFixed(0)}% поточного етапу`}
       </p>
+    </div>
+  );
+}
+
+interface GenerationStageIndicatorProps {
+  stage: string | null;
+}
+
+function GenerationStageIndicator({ stage }: GenerationStageIndicatorProps): ReactElement {
+  const stepIndex = stage === 'summary' ? 0 : stage === 'glossary' ? 1 : -1;
+  const steps: { key: 'summary' | 'glossary'; title: string; hint: string }[] = [
+    {
+      key: 'summary',
+      title: 'Створення конспекту',
+      hint: 'LLM формує ієрархічний конспект лекції з розділами, ключовими тезами та формулами.',
+    },
+    {
+      key: 'glossary',
+      title: 'Створення глосарію',
+      hint: 'LLM виділяє 10–30 ключових термінів і формулює короткі визначення на основі лекції.',
+    },
+  ];
+  const active = steps[stepIndex] ?? null;
+
+  return (
+    <div className="mx-auto max-w-md space-y-3">
+      <div className="flex items-center justify-center gap-3">
+        {steps.map((step, i) => {
+          const isDone = i < stepIndex;
+          const isActive = i === stepIndex;
+          const circleClass = isDone
+            ? 'bg-status-completed text-white'
+            : isActive
+              ? 'bg-status-running text-white animate-pulse'
+              : 'bg-slate-200 text-slate-500';
+          const labelClass = isActive
+            ? 'text-status-running font-medium'
+            : isDone
+              ? 'text-status-completed'
+              : 'text-slate-500';
+          return (
+            <div key={step.key} className="flex items-center gap-3">
+              <div className={`flex items-center gap-2`}>
+                <span
+                  className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${circleClass}`}
+                  aria-hidden="true"
+                >
+                  {isDone ? '✓' : i + 1}
+                </span>
+                <span className={`text-sm ${labelClass}`}>{step.title}</span>
+              </div>
+              {i < steps.length - 1 ? (
+                <span aria-hidden="true" className="text-slate-300">
+                  →
+                </span>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+      {active !== null ? (
+        <p className="text-xs text-slate-500">
+          Крок {stepIndex + 1} з {steps.length}: {active.hint}
+        </p>
+      ) : (
+        <p className="text-xs text-slate-500">Готуємо LLM-запити…</p>
+      )}
     </div>
   );
 }
