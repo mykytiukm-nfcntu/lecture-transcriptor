@@ -48,7 +48,7 @@ pointer — there is no shared root `.env`.
 | `WHISPER_VAD` | `true` | Enable Silero VAD (drops silences). |
 | `WHISPER_FALLBACK_LANGUAGE` | `uk` | Language used when auto-detect confidence is too low. |
 | `WHISPER_LANGUAGE_DETECT_MIN_PROB` | `0.5` | Confidence threshold for language detection. |
-| `LLM_TIMEOUT_SECONDS` | `120` | Per-call Ollama HTTP timeout. |
+| `LLM_TIMEOUT_SECONDS` | `1800` | Per-call Ollama HTTP timeout. Raise for large models on CPU (≥`1800` is safe for 7B-class models). Single-job lock + `/retry` mean an over-generous ceiling costs nothing. |
 | `LLM_MAX_RETRIES` | `2` | JSON-parse/validation retries per LLM call. |
 | `CHUNK_TOKENS` | `1800` | Approximate tokens per transcript chunk. |
 | `CHUNK_OVERLAP_TOKENS` | `200` | Overlap between adjacent chunks. |

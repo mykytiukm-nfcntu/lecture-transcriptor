@@ -1,4 +1,5 @@
 """Environment-driven application settings, exposed via a cached `get_settings()`."""
+
 from __future__ import annotations
 
 from functools import lru_cache
@@ -28,7 +29,10 @@ class Settings(BaseSettings):
 
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "gemma4:12b"
-    LLM_TIMEOUT_SECONDS: int = 120
+    # Per-call Ollama HTTP timeout. Large local models on CPU can need 10–20 minutes
+    # per chunk; the pipeline is single-job locked and retryable, so a generous ceiling
+    # is cheaper than a spurious LlmGenerationError.
+    LLM_TIMEOUT_SECONDS: int = 1800
     LLM_MAX_RETRIES: int = 2
 
     CHUNK_TOKENS: int = 1800
