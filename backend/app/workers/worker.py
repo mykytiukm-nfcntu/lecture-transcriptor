@@ -1,18 +1,23 @@
 """Long-lived background worker thread that owns the job lock around each pipeline call."""
+
 from __future__ import annotations
 
 import logging
 import queue
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session as DBSession
 
 from app.core import job_lock
+from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.core.job_lock import LockedError, job_queue
-from app.models.lecture import Lecture, LectureStatus
+from app.models.glossary import GlossaryTerm
+from app.models.lecture import Lecture, LectureStatus, StageCheckpoint
+from app.models.summary import Summary
+from app.models.transcript import Transcript
 from app.services import pipeline
 
 logger = logging.getLogger(__name__)
@@ -30,7 +35,7 @@ def _mark_failed_without_lock(lecture_id: int, message: str) -> None:
             return
         lecture.status = LectureStatus.failed
         lecture.error_message = message[:2000]
-        lecture.finished_at = datetime.now(timezone.utc)
+        lecture.finished_at = datetime.now(UTC)
         db.commit()
     except Exception:
         db.rollback()
@@ -46,22 +51,80 @@ _ORPHANED_STATUSES: tuple[LectureStatus, ...] = (
     LectureStatus.generating,
 )
 
+ORPHAN_RESTART_MESSAGE = (
+    "Server restarted while processing; retry to continue from the last completed stage."
+)
+
+
+def _derive_orphan_checkpoint(db: DBSession, lecture: Lecture) -> StageCheckpoint | None:
+    """Return the highest stage whose artifact evidence exists for this lecture.
+
+    Probes are cheap SELECT-1 style existence checks scoped by ``lecture_id`` plus a
+    single ``normalized.wav`` disk stat under the canonical media path. Returns
+    ``None`` when no artifact evidence exists (legacy grandfathered row).
+    """
+    lid = lecture.id
+    if db.query(GlossaryTerm.id).filter(GlossaryTerm.lecture_id == lid).first() is not None:
+        return StageCheckpoint.glossary
+    if db.query(Summary.id).filter(Summary.lecture_id == lid).first() is not None:
+        return StageCheckpoint.summary
+    if db.query(Transcript.id).filter(Transcript.lecture_id == lid).first() is not None:
+        return StageCheckpoint.transcribe
+    normalized = get_settings().media_root / str(lecture.user_id) / str(lid) / "normalized.wav"
+    if normalized.exists():
+        return StageCheckpoint.normalize
+    return None
+
 
 def reconcile_orphaned_lectures() -> int:
-    """Mark every non-terminal lecture as failed on startup (pipeline is non-resumable)."""
+    """Reconcile mid-flight lectures on startup, preserving partial-artifact checkpoints.
+
+    Each non-terminal row's highest-matching stage checkpoint is derived from disk +
+    DB evidence, then the row is flipped to ``failed`` with a "server restarted"
+    message so the user can retry from the last committed stage. If a row already has
+    committed glossary rows (the pipeline should have flipped it to ``completed``
+    itself; defensive branch) it is flipped to ``completed`` instead. Returns the
+    total number of rows reconciled. Idempotent: rows already in a terminal status
+    are ignored, so repeat invocations are no-ops.
+    """
     db: DBSession = SessionLocal()
     try:
         stuck = db.query(Lecture).filter(Lecture.status.in_(_ORPHANED_STATUSES)).all()
         if not stuck:
             return 0
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
+        failed_count = 0
+        completed_count = 0
         for lecture in stuck:
-            lecture.status = LectureStatus.failed
-            lecture.error_message = "Server restarted while processing; please re-upload."
-            lecture.finished_at = now
+            checkpoint = _derive_orphan_checkpoint(db, lecture)
+            if checkpoint is StageCheckpoint.glossary:
+                logger.warning(
+                    "Orphaned lecture %d already has glossary rows; reconciling to completed",
+                    lecture.id,
+                )
+                lecture.status = LectureStatus.completed
+                lecture.last_completed_stage = StageCheckpoint.glossary
+                lecture.finished_at = now
+                # Clear any stale error left by a prior failure attempt so a completed
+                # lecture never surfaces an error string in the UI.
+                lecture.error_message = None
+                completed_count += 1
+            else:
+                lecture.status = LectureStatus.failed
+                lecture.error_message = ORPHAN_RESTART_MESSAGE
+                lecture.finished_at = now
+                lecture.last_completed_stage = checkpoint
+                failed_count += 1
         db.commit()
-        logger.info("Reconciled %d orphaned lecture(s) to failed", len(stuck))
-        return len(stuck)
+        if completed_count:
+            logger.info(
+                "Reconciled %d orphaned lecture(s) to failed, %d to completed",
+                failed_count,
+                completed_count,
+            )
+        else:
+            logger.info("Reconciled %d orphaned lecture(s) to failed", failed_count)
+        return failed_count + completed_count
     except Exception:
         db.rollback()
         logger.exception("Failed to reconcile orphaned lectures")

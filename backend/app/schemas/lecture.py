@@ -1,11 +1,12 @@
 """Lecture list / detail / status response schemas."""
+
 from __future__ import annotations
 
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from app.models.lecture import LectureStatus
+from app.models.lecture import LectureStatus, StageCheckpoint
 
 
 class LectureListItem(BaseModel):
@@ -17,6 +18,8 @@ class LectureListItem(BaseModel):
     duration_seconds: float | None
     language: str | None
     status: LectureStatus
+    last_completed_stage: StageCheckpoint | None
+    can_retry: bool
     error_message: str | None
     started_at: datetime | None
     finished_at: datetime | None
@@ -32,6 +35,8 @@ class LectureStatusResponse(BaseModel):
 
     id: int
     status: LectureStatus
+    last_completed_stage: StageCheckpoint | None
+    can_retry: bool
     started_at: datetime | None
     finished_at: datetime | None
     error_message: str | None

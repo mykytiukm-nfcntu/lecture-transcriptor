@@ -14,6 +14,8 @@ export type LectureStatus =
   | 'completed'
   | 'failed';
 
+export type StageCheckpoint = 'normalize' | 'transcribe' | 'summary' | 'glossary';
+
 export interface UserResponse {
   id: number;
   username: string;
@@ -43,6 +45,8 @@ export interface LectureListItem {
   started_at: string | null;
   finished_at: string | null;
   created_at: string;
+  last_completed_stage: StageCheckpoint | null;
+  can_retry: boolean;
 }
 
 export interface LectureDetail extends LectureListItem {
@@ -63,6 +67,8 @@ export interface LectureStatusResponse {
   preliminary_eta_seconds: number | null;
   progress_percent: number | null;
   progress_stage: string | null;
+  last_completed_stage: StageCheckpoint | null;
+  can_retry: boolean;
 }
 
 export interface TranscriptSegment {
@@ -126,7 +132,11 @@ export interface ModelsResponse {
   installed: string[];
 }
 
+export type ApiErrorDetail =
+  | string
+  | { code: string; message: string };
+
 export interface ApiErrorBody {
-  detail: string;
+  detail?: ApiErrorDetail;
   code?: string | null;
 }

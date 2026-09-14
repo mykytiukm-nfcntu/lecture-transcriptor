@@ -1,12 +1,12 @@
 """Tests for /api/lectures/{id}/export/txt and /pdf."""
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Helpers.
@@ -44,8 +44,8 @@ def _make_completed_lecture(user_id: int) -> tuple[int, int]:
             duration_seconds=10.0,
             language="uk",
             status=LectureStatus.completed,
-            started_at=datetime.now(timezone.utc),
-            finished_at=datetime.now(timezone.utc),
+            started_at=datetime.now(UTC),
+            finished_at=datetime.now(UTC),
         )
         db.add(lecture)
         db.flush()
@@ -214,3 +214,81 @@ def test_export_pdf_503_when_font_missing(
     assert resp.status_code == 503, resp.text
     body = resp.json()
     assert "font" in body["detail"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Partial export during the LLM stage.
+# ---------------------------------------------------------------------------
+
+
+def _make_generating_lecture_with_transcript_only(user_id: int) -> tuple[int, int]:
+    """Course + `generating` lecture + transcript (no summary, no glossary yet).
+
+    Simulates the mid-pipeline state after ASR commits but before summary_v1 lands.
+    """
+    from app.core.db import SessionLocal
+    from app.models.course import Course
+    from app.models.lecture import Lecture, LectureStatus, StageCheckpoint
+    from app.models.transcript import Transcript, TranscriptSegment
+
+    db = SessionLocal()
+    try:
+        course = Course(user_id=user_id, title="Partial export course")
+        db.add(course)
+        db.flush()
+
+        lecture = Lecture(
+            course_id=course.id,
+            user_id=user_id,
+            title="Partial export lecture",
+            original_filename="partial.wav",
+            duration_seconds=10.0,
+            language="uk",
+            status=LectureStatus.generating,
+            last_completed_stage=StageCheckpoint.transcribe,
+            started_at=datetime.now(UTC),
+        )
+        db.add(lecture)
+        db.flush()
+
+        transcript = Transcript(
+            lecture_id=lecture.id,
+            full_text="Мід-ран транскрипт.",
+            language="uk",
+        )
+        db.add(transcript)
+        db.flush()
+        db.add(
+            TranscriptSegment(
+                transcript_id=transcript.id,
+                index=0,
+                start_seconds=0.0,
+                end_seconds=10.0,
+                text="Мід-ран транскрипт.",
+                confidence=-0.2,
+            )
+        )
+        db.commit()
+        return course.id, lecture.id
+    finally:
+        db.close()
+
+
+def test_export_txt_returns_partial_during_generating(
+    authed_client: tuple[Any, str, int],
+) -> None:
+    client, token, user_id = authed_client
+    _, lecture_id = _make_generating_lecture_with_transcript_only(user_id)
+
+    resp = client.get(
+        f"/api/lectures/{lecture_id}/export/txt",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.text
+    assert body.startswith("# Partial export lecture")
+    assert "## Transcript" in body
+    assert "Мід-ран транскрипт." in body
+    # Summary and glossary have not committed yet — those sections must be absent.
+    assert "## Summary" not in body
+    assert "## Glossary" not in body

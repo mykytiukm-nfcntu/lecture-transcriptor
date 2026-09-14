@@ -1,9 +1,9 @@
 """Cross-user isolation: every user-scoped read/write must 404 for non-owners."""
+
 from __future__ import annotations
 
 import secrets
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -62,8 +62,8 @@ def _pre_populate_user_a_lecture(user_id: int) -> tuple[int, int]:
             duration_seconds=10.0,
             language="uk",
             status=LectureStatus.completed,
-            started_at=datetime.now(timezone.utc),
-            finished_at=datetime.now(timezone.utc),
+            started_at=datetime.now(UTC),
+            finished_at=datetime.now(UTC),
         )
         db.add(lecture)
         db.flush()
@@ -190,9 +190,7 @@ def test_user_b_cannot_read_transcript_summary_glossary_status_audio(
 
 
 @pytest.mark.parametrize("fmt", ["txt", "pdf"])
-def test_user_b_cannot_export_txt_or_pdf(
-    two_users_and_lecture: dict[str, Any], fmt: str
-) -> None:
+def test_user_b_cannot_export_txt_or_pdf(two_users_and_lecture: dict[str, Any], fmt: str) -> None:
     ctx = two_users_and_lecture
     resp = ctx["client"].get(
         f"/api/lectures/{ctx['lecture_id']}/export/{fmt}",
@@ -230,13 +228,21 @@ def test_owner_can_see_everything(two_users_and_lecture: dict[str, Any]) -> None
     )
     assert r_transcript.status_code == 200
 
-    r_summary = ctx["client"].get(
-        f"/api/lectures/{ctx['lecture_id']}/summary", headers=headers
-    )
+    r_summary = ctx["client"].get(f"/api/lectures/{ctx['lecture_id']}/summary", headers=headers)
     assert r_summary.status_code == 200
 
-    r_glossary = ctx["client"].get(
-        f"/api/lectures/{ctx['lecture_id']}/glossary", headers=headers
-    )
+    r_glossary = ctx["client"].get(f"/api/lectures/{ctx['lecture_id']}/glossary", headers=headers)
     assert r_glossary.status_code == 200
     assert len(r_glossary.json()["entries"]) == 10
+
+
+def test_user_b_cannot_retry_user_a_lecture(two_users_and_lecture: dict[str, Any]) -> None:
+    # Ownership is checked before status, so B gets 404 even though A's own POST
+    # against a completed lecture would fail with 400 already_completed.
+    ctx = two_users_and_lecture
+    resp = ctx["client"].post(
+        f"/api/lectures/{ctx['lecture_id']}/retry",
+        headers={"Authorization": f"Bearer {ctx['token_b']}"},
+    )
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "lecture not found"

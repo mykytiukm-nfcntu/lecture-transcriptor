@@ -404,6 +404,10 @@ The single source of truth for configurable values is `backend/.env.example` (co
 - Frontend: `npm install` needed before `tsc --noEmit` / `eslint`; deliverables reviewed with zero VS Code diagnostics.
 - Task **COMPLETED**.
 
+### 2026-09-14 — Follow-up task: pipeline checkpoints & retry
+- Reversed the "pipeline is not resumable" invariant in a follow-up task; see [task-pipeline-checkpoints-and-retry.context.md](task-pipeline-checkpoints-and-retry.context.md).
+- Summary of changes: `Lecture.last_completed_stage` + `generation_language` + `ollama_model` columns; per-stage checkpoint commits in `services/pipeline.py`; `POST /api/lectures/{id}/retry`; orphan reconciliation preserves partial artifacts; frontend viewer surfaces transcript mid-run and shows a Retry button on retry-eligible failures; universal tab-visibility rule keyed on `last_completed_stage`.
+
 ---
 
 ## Relevant Context

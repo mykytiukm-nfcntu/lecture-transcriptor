@@ -1,8 +1,9 @@
 """SQLAlchemy engine, session factory, declarative base, and startup helpers."""
+
 from __future__ import annotations
 
 from collections.abc import Generator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -30,23 +31,19 @@ class UtcDateTime(TypeDecorator[datetime]):
     impl = DateTime(timezone=True)
     cache_ok = True
 
-    def process_bind_param(
-        self, value: datetime | None, dialect: Dialect
-    ) -> datetime | None:
+    def process_bind_param(self, value: datetime | None, dialect: Dialect) -> datetime | None:
         if value is None:
             return None
         if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
-    def process_result_value(
-        self, value: datetime | None, dialect: Dialect
-    ) -> datetime | None:
+    def process_result_value(self, value: datetime | None, dialect: Dialect) -> datetime | None:
         if value is None:
             return None
         if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
 
 def _ensure_storage_dirs() -> None:
@@ -101,3 +98,31 @@ def create_all() -> None:
     import app.models  # noqa: F401  Force model modules to register with Base.metadata.
 
     Base.metadata.create_all(engine)
+    _ensure_lecture_checkpoint_columns()
+
+
+def _ensure_lecture_checkpoint_columns() -> None:
+    """Backfill the pipeline-checkpoint columns on legacy SQLite DBs.
+
+    `Base.metadata.create_all()` does not ALTER existing tables, so upgrading in
+    place needs a one-shot `ALTER TABLE ADD COLUMN` per column that predates
+    this feature. Idempotent — `PRAGMA table_info` is checked first. SQLite-only;
+    other dialects are out of scope for this app.
+    """
+    if engine.dialect.name != "sqlite":
+        return
+    required: tuple[tuple[str, str], ...] = (
+        ("last_completed_stage", "VARCHAR"),
+        ("generation_language", "VARCHAR(16)"),
+        ("ollama_model", "VARCHAR(64)"),
+    )
+    with engine.begin() as conn:
+        rows = conn.exec_driver_sql("PRAGMA table_info(lectures)").fetchall()
+        if not rows:
+            # No `lectures` table yet — `create_all` above will have built the fresh schema.
+            return
+        existing = {row[1] for row in rows}
+        for name, ddl in required:
+            if name in existing:
+                continue
+            conn.exec_driver_sql(f"ALTER TABLE lectures ADD COLUMN {name} {ddl}")

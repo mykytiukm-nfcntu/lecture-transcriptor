@@ -76,10 +76,18 @@ async function parseErrorBody(
   }
   try {
     const body = (await response.json()) as Partial<ApiErrorBody>;
-    const detail =
-      typeof body.detail === 'string' && body.detail.length > 0 ? body.detail : fallbackDetail;
-    const code = typeof body.code === 'string' ? body.code : null;
-    return { detail, code };
+    const rawDetail = body.detail;
+    if (typeof rawDetail === 'string' && rawDetail.length > 0) {
+      const code = typeof body.code === 'string' ? body.code : null;
+      return { detail: rawDetail, code };
+    }
+    if (typeof rawDetail === 'object' && rawDetail !== null) {
+      const nested = rawDetail as Record<string, unknown>;
+      if (typeof nested.code === 'string' && typeof nested.message === 'string') {
+        return { detail: nested.message, code: nested.code };
+      }
+    }
+    return { detail: fallbackDetail, code: null };
   } catch {
     return { detail: fallbackDetail, code: null };
   }

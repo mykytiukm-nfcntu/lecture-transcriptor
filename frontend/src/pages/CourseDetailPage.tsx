@@ -5,10 +5,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { ApiError } from '@/api/client';
 import { getCourse } from '@/api/courses';
-import { deleteLecture, listLectures } from '@/api/lectures';
+import { deleteLecture, listLectures, retryLecture } from '@/api/lectures';
 import { StatusBadge } from '@/components/StatusBadge';
 import { UploadForm } from '@/components/UploadForm';
-import type { CourseResponse, LectureListItem, LectureStatus } from '@/types/api';
+import type {
+  CourseResponse,
+  LectureDetail,
+  LectureListItem,
+  LectureStatus,
+} from '@/types/api';
 import { formatDateTime, formatDuration, ukPlural } from '@/utils/format';
 
 const IN_PROGRESS: readonly LectureStatus[] = [
@@ -45,6 +50,14 @@ export function CourseDetailPage(): ReactElement {
     },
   });
 
+  const retryMutation = useMutation<LectureDetail, Error, number>({
+    mutationFn: retryLecture,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['lectures', courseId] });
+      void queryClient.invalidateQueries({ queryKey: ['courses'] });
+    },
+  });
+
   const anyInProgress = useMemo(
     () => (lecturesQuery.data ?? []).some((l) => IN_PROGRESS.includes(l.status)),
     [lecturesQuery.data],
@@ -67,6 +80,17 @@ export function CourseDetailPage(): ReactElement {
       : deleteMutation.error instanceof Error
         ? deleteMutation.error.message
         : null;
+
+  const retryError: string | null = ((): string | null => {
+    const err = retryMutation.error;
+    if (err instanceof ApiError) {
+      if (err.code === 'job_running') {
+        return 'Наразі виконується інша транскрипція. Зачекайте, поки вона завершиться.';
+      }
+      return err.message;
+    }
+    return err instanceof Error ? err.message : null;
+  })();
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -113,6 +137,11 @@ export function CourseDetailPage(): ReactElement {
               {deleteError}
             </p>
           ) : null}
+          {retryError !== null ? (
+            <p className="text-sm text-status-failed" role="alert">
+              {retryError}
+            </p>
+          ) : null}
           {lecturesQuery.isLoading ? (
             <p className="text-slate-500">Завантаження лекцій…</p>
           ) : lecturesQuery.isError ? (
@@ -147,6 +176,13 @@ export function CourseDetailPage(): ReactElement {
                       {lecture.language ?? 'визначення мови…'} · завантажено{' '}
                       {formatDateTime(lecture.created_at)}
                     </p>
+                    {lecture.status === 'generating' &&
+                    (lecture.last_completed_stage === 'transcribe' ||
+                      lecture.last_completed_stage === 'summary') ? (
+                      <p className="text-xs font-semibold text-status-completed">
+                        Транскрипт готовий — можна відкрити
+                      </p>
+                    ) : null}
                     {lecture.error_message !== null ? (
                       <p className="text-xs text-status-failed">
                         Помилка: {lecture.error_message}
@@ -160,6 +196,16 @@ export function CourseDetailPage(): ReactElement {
                     >
                       Переглянути
                     </Link>
+                    {lecture.status === 'failed' && lecture.can_retry ? (
+                      <button
+                        type="button"
+                        onClick={() => retryMutation.mutate(lecture.id)}
+                        disabled={retryMutation.isPending || anyInProgress}
+                        className="rounded border border-status-running px-3 py-1 text-sm text-status-running hover:bg-status-running/10 disabled:opacity-50"
+                      >
+                        Спробувати знову
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => {

@@ -1,14 +1,13 @@
 """Tests for /api/courses/{id}/lectures and /api/lectures/{id}: upload, delete, list."""
+
 from __future__ import annotations
 
 import secrets
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Local helpers.
@@ -348,3 +347,560 @@ def test_list_lectures_filters_by_course(
     assert resp_b.status_code == 200
     ids_b = [row["id"] for row in resp_b.json()]
     assert ids_b == [lecture_b]
+
+
+# ---------- Retry endpoint ----------
+# Local helpers mirroring the in-function-import pattern used by `_make_lecture`
+# so app.* imports still happen after the conftest env fixture has run.
+
+
+def _set_checkpoint(
+    lecture_id: int,
+    stage: Any,
+    *,
+    error_message: str | None = None,
+    generation_language: str | None = None,
+    ollama_model: str | None = None,
+) -> None:
+    """Mutate a persisted lecture row's checkpoint + optional retry-related fields."""
+    from app.core.db import SessionLocal
+    from app.models.lecture import Lecture
+
+    db = SessionLocal()
+    try:
+        lecture = db.get(Lecture, lecture_id)
+        assert lecture is not None
+        lecture.last_completed_stage = stage
+        if error_message is not None:
+            lecture.error_message = error_message
+        if generation_language is not None:
+            lecture.generation_language = generation_language
+        if ollama_model is not None:
+            lecture.ollama_model = ollama_model
+        db.commit()
+    finally:
+        db.close()
+
+
+def _insert_transcript(lecture_id: int, *, full_text: str = "Тест", language: str = "uk") -> None:
+    from app.core.db import SessionLocal
+    from app.models.transcript import Transcript, TranscriptSegment
+
+    db = SessionLocal()
+    try:
+        t = Transcript(lecture_id=lecture_id, full_text=full_text, language=language)
+        db.add(t)
+        db.flush()
+        db.add(
+            TranscriptSegment(
+                transcript_id=t.id,
+                index=0,
+                start_seconds=0.0,
+                end_seconds=10.0,
+                text=full_text,
+                confidence=-0.2,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
+def _insert_summary(
+    lecture_id: int,
+    *,
+    title: str = "Тестова лекція",
+    language: str = "uk",
+) -> None:
+    from app.core.db import SessionLocal
+    from app.models.summary import Summary
+    from app.schemas.summary import SummaryDocument, SummarySection
+
+    document = SummaryDocument(
+        title=title,
+        language=language,
+        sections=[
+            SummarySection(
+                heading="Вступ",
+                timestamp_seconds=0.0,
+                bullets=["Ключова теза"],
+            )
+        ],
+    )
+    db = SessionLocal()
+    try:
+        db.add(
+            Summary(
+                lecture_id=lecture_id,
+                content_json=document.model_dump_json(),
+                prompt_version="summary_v1",
+                generation_language=language,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
+# Group A — Retry endpoint status matrix.
+
+
+def test_retry_on_completed_returns_400_already_completed(
+    authed_client: tuple[Any, str, int],
+    mock_worker_enqueue: MagicMock,
+) -> None:
+    from app.models.lecture import StageCheckpoint
+
+    client, token, user_id = authed_client
+    course_id = _make_course(user_id)
+    lecture_id = _make_lecture(user_id, course_id, status="completed")
+    _set_checkpoint(lecture_id, StageCheckpoint.glossary)
+
+    resp = client.post(
+        f"/api/lectures/{lecture_id}/retry",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["detail"]["code"] == "already_completed"
+    mock_worker_enqueue.assert_not_called()
+
+
+def test_retry_on_legacy_failed_returns_400_not_resumable(
+    authed_client: tuple[Any, str, int],
+    mock_worker_enqueue: MagicMock,
+) -> None:
+    client, token, user_id = authed_client
+    course_id = _make_course(user_id)
+    # Grandfathered failure: last_completed_stage defaults to NULL.
+    lecture_id = _make_lecture(user_id, course_id, status="failed")
+
+    resp = client.post(
+        f"/api/lectures/{lecture_id}/retry",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["detail"]["code"] == "not_resumable"
+    mock_worker_enqueue.assert_not_called()
+
+
+def test_retry_on_retryable_failed_returns_202_and_enqueues(
+    authed_client: tuple[Any, str, int],
+    mock_worker_enqueue: MagicMock,
+) -> None:
+    from app.models.lecture import LectureStatus, StageCheckpoint
+
+    client, token, user_id = authed_client
+    course_id = _make_course(user_id)
+    lecture_id = _make_lecture(user_id, course_id, status="failed")
+    _set_checkpoint(
+        lecture_id,
+        StageCheckpoint.transcribe,
+        error_message="previous crash",
+    )
+
+    resp = client.post(
+        f"/api/lectures/{lecture_id}/retry",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 202, resp.text
+    body = resp.json()
+    assert body["status"] == "queued"
+    assert body["error_message"] is None
+    assert body["started_at"] is None
+    assert body["finished_at"] is None
+    assert body["last_completed_stage"] == "transcribe"
+    # can_retry is derived from status==failed; queued flips it to False by design.
+    assert body["can_retry"] is False
+
+    mock_worker_enqueue.assert_called_once()
+    args, kwargs = mock_worker_enqueue.call_args
+    assert args[0] == lecture_id
+    assert kwargs.get("generation_language") is None
+    assert kwargs.get("model") is None
+
+    row = _lecture_row(lecture_id)
+    assert row is not None
+    assert row.status == LectureStatus.queued
+    assert row.last_completed_stage == StageCheckpoint.transcribe
+    assert row.error_message is None
+    assert row.finished_at is None
+
+
+def test_retry_when_job_running_returns_409(
+    authed_client: tuple[Any, str, int],
+    monkeypatch: pytest.MonkeyPatch,
+    mock_worker_enqueue: MagicMock,
+) -> None:
+    # Chose monkeypatch over `job_lock.try_acquire()` + finally: no manual cleanup,
+    # conftest resets lock state between tests, matches test_upload_while_job_locked pattern.
+    from app.core import job_lock
+    from app.models.lecture import LectureStatus, StageCheckpoint
+
+    client, token, user_id = authed_client
+    course_id = _make_course(user_id)
+    lecture_id = _make_lecture(user_id, course_id, status="failed")
+    _set_checkpoint(lecture_id, StageCheckpoint.transcribe, error_message="previous crash")
+
+    monkeypatch.setattr(job_lock, "is_locked", lambda: True)
+
+    resp = client.post(
+        f"/api/lectures/{lecture_id}/retry",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["detail"]["code"] == "job_running"
+    mock_worker_enqueue.assert_not_called()
+
+    row = _lecture_row(lecture_id)
+    assert row is not None
+    assert row.status == LectureStatus.failed
+    assert row.error_message == "previous crash"
+
+
+def test_retry_on_foreign_lecture_returns_404(
+    authed_client: tuple[Any, str, int],
+    second_user: dict[str, Any],
+    mock_worker_enqueue: MagicMock,
+) -> None:
+    from app.models.lecture import StageCheckpoint
+
+    client, token, _user_a_id = authed_client
+    # Lecture belongs to user B; user A tries to retry it with their own bearer.
+    course_id = _make_course(second_user["id"])
+    lecture_id = _make_lecture(second_user["id"], course_id, status="failed")
+    _set_checkpoint(lecture_id, StageCheckpoint.transcribe)
+
+    resp = client.post(
+        f"/api/lectures/{lecture_id}/retry",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 404, resp.text
+    mock_worker_enqueue.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "status_value",
+    ["normalizing", "transcribing", "generating"],
+)
+def test_retry_on_active_returns_409_job_running(
+    authed_client: tuple[Any, str, int],
+    mock_worker_enqueue: MagicMock,
+    status_value: str,
+) -> None:
+    from app.models.lecture import StageCheckpoint
+
+    client, token, user_id = authed_client
+    course_id = _make_course(user_id)
+    lecture_id = _make_lecture(user_id, course_id, status=status_value)
+    stage_for_status: dict[str, Any] = {
+        "normalizing": None,
+        "transcribing": StageCheckpoint.normalize,
+        "generating": StageCheckpoint.transcribe,
+    }
+    _set_checkpoint(lecture_id, stage_for_status[status_value])
+
+    resp = client.post(
+        f"/api/lectures/{lecture_id}/retry",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["detail"]["code"] == "job_running"
+    mock_worker_enqueue.assert_not_called()
+
+
+def test_retry_on_queued_returns_409_already_queued(
+    authed_client: tuple[Any, str, int],
+    mock_worker_enqueue: MagicMock,
+) -> None:
+    client, token, user_id = authed_client
+    course_id = _make_course(user_id)
+    lecture_id = _make_lecture(user_id, course_id, status="queued")
+    _set_checkpoint(lecture_id, None)
+
+    resp = client.post(
+        f"/api/lectures/{lecture_id}/retry",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["detail"]["code"] == "already_queued"
+    mock_worker_enqueue.assert_not_called()
+
+
+def test_retry_preserves_generation_language_and_model_overrides(
+    authed_client: tuple[Any, str, int],
+    mock_worker_enqueue: MagicMock,
+) -> None:
+    from app.models.lecture import StageCheckpoint
+
+    client, token, user_id = authed_client
+    course_id = _make_course(user_id)
+    lecture_id = _make_lecture(user_id, course_id, status="failed")
+    _set_checkpoint(
+        lecture_id,
+        StageCheckpoint.transcribe,
+        generation_language="en",
+        ollama_model="qwen2.5:3b",
+    )
+
+    resp = client.post(
+        f"/api/lectures/{lecture_id}/retry",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 202, resp.text
+
+    mock_worker_enqueue.assert_called_once()
+    _args, kwargs = mock_worker_enqueue.call_args
+    assert kwargs.get("generation_language") == "en"
+    assert kwargs.get("model") == "qwen2.5:3b"
+
+
+def _set_lifecycle_fields(
+    lecture_id: int,
+    *,
+    started_at: datetime | None,
+    finished_at: datetime | None,
+) -> None:
+    """Seed `started_at` / `finished_at` on a persisted lecture row."""
+    from app.core.db import SessionLocal
+    from app.models.lecture import Lecture
+
+    db = SessionLocal()
+    try:
+        lecture = db.get(Lecture, lecture_id)
+        assert lecture is not None
+        lecture.started_at = started_at
+        lecture.finished_at = finished_at
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_retry_on_failed_with_glossary_checkpoint_returns_400_already_completed(
+    authed_client: tuple[Any, str, int],
+    mock_worker_enqueue: MagicMock,
+) -> None:
+    # Defensive branch: a `failed` row that also carries the terminal checkpoint
+    # (pipeline normally commits `glossary` + `completed` together) still
+    # short-circuits to `already_completed` and never enqueues.
+    from app.models.lecture import LectureStatus, StageCheckpoint
+
+    client, token, user_id = authed_client
+    course_id = _make_course(user_id)
+    lecture_id = _make_lecture(user_id, course_id, status="failed")
+    _set_checkpoint(lecture_id, StageCheckpoint.glossary, error_message="prior failure")
+
+    resp = client.post(
+        f"/api/lectures/{lecture_id}/retry",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 400, resp.text
+    detail = resp.json()["detail"]
+    assert detail["code"] == "already_completed"
+    assert isinstance(detail["message"], str) and detail["message"]
+    mock_worker_enqueue.assert_not_called()
+
+    row = _lecture_row(lecture_id)
+    assert row is not None
+    assert row.status == LectureStatus.failed
+    assert row.last_completed_stage == StageCheckpoint.glossary
+    assert row.error_message == "prior failure"
+
+
+def test_retry_rolls_back_state_when_worker_enqueue_raises_locked_error(
+    authed_client: tuple[Any, str, int],
+    mock_worker_enqueue: MagicMock,
+) -> None:
+    # is_locked() is left returning False so the pre-mutation check passes and
+    # the endpoint commits `queued`; only then does worker.enqueue raise inside
+    # the try block, exercising the crash-state restore path.
+    from app.core.job_lock import LockedError
+    from app.models.lecture import LectureStatus, StageCheckpoint
+
+    client, token, user_id = authed_client
+    course_id = _make_course(user_id)
+    lecture_id = _make_lecture(user_id, course_id, status="failed")
+    _set_checkpoint(lecture_id, StageCheckpoint.transcribe, error_message="old error")
+    prev_started_at = datetime(2026, 1, 1, 10, 0, 0, tzinfo=UTC)
+    prev_finished_at = datetime(2026, 1, 1, 10, 5, 0, tzinfo=UTC)
+    _set_lifecycle_fields(lecture_id, started_at=prev_started_at, finished_at=prev_finished_at)
+
+    mock_worker_enqueue.side_effect = LockedError("simulated race")
+
+    resp = client.post(
+        f"/api/lectures/{lecture_id}/retry",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["detail"]["code"] == "job_running"
+    mock_worker_enqueue.assert_called_once()
+
+    row = _lecture_row(lecture_id)
+    assert row is not None
+    assert row.status == LectureStatus.failed
+    assert row.error_message == "old error"
+    assert row.last_completed_stage == StageCheckpoint.transcribe
+    assert row.started_at == prev_started_at
+    assert row.finished_at == prev_finished_at
+
+
+def test_retry_twice_in_a_row_yields_202_then_409_already_queued(
+    authed_client: tuple[Any, str, int],
+    mock_worker_enqueue: MagicMock,
+) -> None:
+    # Simulated concurrent retry: A wins (row → queued), B lands on the
+    # `queued` branch and returns 409 already_queued. Worker is mocked so
+    # nothing transitions the row between the two calls.
+    from app.models.lecture import LectureStatus, StageCheckpoint
+
+    client, token, user_id = authed_client
+    course_id = _make_course(user_id)
+    lecture_id = _make_lecture(user_id, course_id, status="failed")
+    _set_checkpoint(lecture_id, StageCheckpoint.transcribe, error_message="prev")
+
+    resp_a = client.post(
+        f"/api/lectures/{lecture_id}/retry",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp_a.status_code == 202, resp_a.text
+    assert mock_worker_enqueue.call_count == 1
+
+    resp_b = client.post(
+        f"/api/lectures/{lecture_id}/retry",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp_b.status_code == 409, resp_b.text
+    assert resp_b.json()["detail"]["code"] == "already_queued"
+    assert mock_worker_enqueue.call_count == 1
+
+    row = _lecture_row(lecture_id)
+    assert row is not None
+    assert row.status == LectureStatus.queued
+    assert row.error_message is None
+    assert row.last_completed_stage == StageCheckpoint.transcribe
+
+
+# Group B — Detail / status responses expose the new fields.
+
+
+def test_detail_on_retryable_failed_exposes_can_retry_true(
+    authed_client: tuple[Any, str, int],
+) -> None:
+    from app.models.lecture import StageCheckpoint
+
+    client, token, user_id = authed_client
+    course_id = _make_course(user_id)
+    lecture_id = _make_lecture(user_id, course_id, status="failed")
+    _set_checkpoint(lecture_id, StageCheckpoint.summary, error_message="prev crash")
+
+    resp = client.get(
+        f"/api/lectures/{lecture_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "failed"
+    assert body["last_completed_stage"] == "summary"
+    assert body["can_retry"] is True
+
+
+def test_detail_on_legacy_failed_exposes_can_retry_false(
+    authed_client: tuple[Any, str, int],
+) -> None:
+    client, token, user_id = authed_client
+    course_id = _make_course(user_id)
+    lecture_id = _make_lecture(user_id, course_id, status="failed")
+
+    resp = client.get(
+        f"/api/lectures/{lecture_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["last_completed_stage"] is None
+    assert body["can_retry"] is False
+
+
+def test_status_on_generating_exposes_checkpoint_and_can_retry_false(
+    authed_client: tuple[Any, str, int],
+) -> None:
+    from app.models.lecture import StageCheckpoint
+
+    client, token, user_id = authed_client
+    course_id = _make_course(user_id)
+    lecture_id = _make_lecture(user_id, course_id, status="generating")
+    _set_checkpoint(lecture_id, StageCheckpoint.transcribe)
+
+    resp = client.get(
+        f"/api/lectures/{lecture_id}/status",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["last_completed_stage"] == "transcribe"
+    assert body["can_retry"] is False
+
+
+# Group C — Partial artifact reads during `generating`.
+
+
+def test_transcript_readable_during_generating(
+    authed_client: tuple[Any, str, int],
+) -> None:
+    from app.models.lecture import StageCheckpoint
+
+    client, token, user_id = authed_client
+    course_id = _make_course(user_id)
+    lecture_id = _make_lecture(user_id, course_id, status="generating")
+    _set_checkpoint(lecture_id, StageCheckpoint.transcribe)
+    _insert_transcript(lecture_id, full_text="Тест", language="uk")
+
+    resp = client.get(
+        f"/api/lectures/{lecture_id}/transcript",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["full_text"] == "Тест"
+    assert body["language"] == "uk"
+    assert len(body["segments"]) > 0
+
+
+def test_summary_readable_during_generating(
+    authed_client: tuple[Any, str, int],
+) -> None:
+    from app.models.lecture import StageCheckpoint
+
+    client, token, user_id = authed_client
+    course_id = _make_course(user_id)
+    lecture_id = _make_lecture(user_id, course_id, status="generating")
+    _set_checkpoint(lecture_id, StageCheckpoint.summary)
+    _insert_summary(lecture_id, title="Тестова лекція", language="uk")
+
+    resp = client.get(
+        f"/api/lectures/{lecture_id}/summary",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["content"]["title"] == "Тестова лекція"
+    assert body["generation_language"] == "uk"
+
+
+def test_glossary_returns_404_during_generating_without_terms(
+    authed_client: tuple[Any, str, int],
+) -> None:
+    from app.models.lecture import StageCheckpoint
+
+    client, token, user_id = authed_client
+    course_id = _make_course(user_id)
+    lecture_id = _make_lecture(user_id, course_id, status="generating")
+    _set_checkpoint(lecture_id, StageCheckpoint.summary)
+    _insert_transcript(lecture_id)
+    _insert_summary(lecture_id)
+    # No GlossaryTerm rows — glossary stage has not committed yet.
+
+    resp = client.get(
+        f"/api/lectures/{lecture_id}/glossary",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 404, resp.text

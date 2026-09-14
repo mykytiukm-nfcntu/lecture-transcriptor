@@ -97,6 +97,10 @@ export async function createAudioObjectUrl(id: number): Promise<string> {
   return URL.createObjectURL(blob);
 }
 
+export async function retryLecture(id: number): Promise<LectureDetail> {
+  return fetchJson<LectureDetail>(`/api/lectures/${id}/retry`, { method: 'POST' });
+}
+
 /**
  * Fetch an export and trigger a browser download via a temporary `<a>` click.
  * Same rationale as `createAudioObjectUrl`: the endpoint requires a bearer.

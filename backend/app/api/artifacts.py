@@ -1,8 +1,9 @@
 """Read-only artifact endpoints: transcript, summary, glossary, status."""
+
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -32,11 +33,7 @@ _ACTIVE_STATUSES: frozenset[LectureStatus] = frozenset(
 
 
 def _get_owned_lecture(db: DBSession, lecture_id: int, user_id: int) -> Lecture:
-    lecture = (
-        db.query(Lecture)
-        .filter(Lecture.id == lecture_id, Lecture.user_id == user_id)
-        .first()
-    )
+    lecture = db.query(Lecture).filter(Lecture.id == lecture_id, Lecture.user_id == user_id).first()
     if lecture is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="lecture not found")
     return lecture
@@ -137,7 +134,7 @@ def get_status(
     elapsed: float | None = None
     if lecture.started_at is not None:
         if lecture.status in _ACTIVE_STATUSES:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             elapsed = max(0.0, (now - lecture.started_at).total_seconds())
         elif lecture.finished_at is not None:
             elapsed = max(0.0, (lecture.finished_at - lecture.started_at).total_seconds())
@@ -159,6 +156,8 @@ def get_status(
     return LectureStatusResponse(
         id=lecture.id,
         status=lecture.status,
+        last_completed_stage=lecture.last_completed_stage,
+        can_retry=lecture.can_retry,
         started_at=lecture.started_at,
         finished_at=lecture.finished_at,
         error_message=lecture.error_message,
