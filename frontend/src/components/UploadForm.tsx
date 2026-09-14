@@ -25,18 +25,18 @@ interface FormValues {
   model: string;
 }
 
-const ACCEPTED_EXTS = ['.mp3', '.wav'] as const;
+const ACCEPTED_EXTS = ['.mp3', '.wav', '.m4a'] as const;
 
 function validateFile(file: File | null): string | null {
   if (file === null) {
-    return 'Виберіть файл .mp3 або .wav.';
+    return 'Виберіть файл .mp3, .wav або .m4a.';
   }
   if (file.size === 0) {
     return 'Вибраний файл порожній.';
   }
   const lowered = file.name.toLowerCase();
   if (!ACCEPTED_EXTS.some((ext) => lowered.endsWith(ext))) {
-    return 'Підтримуються лише файли .mp3 та .wav.';
+    return 'Підтримуються лише файли .mp3, .wav та .m4a.';
   }
   return null;
 }
@@ -116,13 +116,13 @@ export function UploadForm({ courseId, disabled, disabledReason }: UploadFormPro
       <div className="grid gap-3 md:grid-cols-3">
         <div className="md:col-span-2">
           <label htmlFor="upload-file" className="block text-sm font-medium text-slate-700">
-            Аудіофайл (.mp3 або .wav)
+            Аудіофайл (.mp3, .wav або .m4a)
           </label>
           <input
             ref={fileInputRef}
             id="upload-file"
             type="file"
-            accept=".mp3,.wav,audio/mpeg,audio/wav"
+            accept=".mp3,.wav,.m4a,audio/mpeg,audio/wav,audio/mp4,audio/x-m4a"
             onChange={handleFileChange}
             className="mt-1 block w-full text-sm text-slate-700 file:mr-3 file:rounded file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-sm file:text-slate-700 hover:file:bg-slate-200"
           />

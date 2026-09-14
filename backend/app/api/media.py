@@ -22,6 +22,7 @@ router = APIRouter(prefix="/api/lectures/{lecture_id}", tags=["media"])
 _MEDIA_TYPES: dict[str, str] = {
     ".mp3": "audio/mpeg",
     ".wav": "audio/wav",
+    ".m4a": "audio/mp4",
 }
 
 

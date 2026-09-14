@@ -1,6 +1,6 @@
 # Local Lecture Transcriptor
 
-Local, single-machine web app that turns a pre-recorded lecture (MP3 or WAV) into a
+Local, single-machine web app that turns a pre-recorded lecture (MP3, WAV, or M4A) into a
 transcript, a structured summary, and a glossary. All processing is offline: ASR runs
 via `faster-whisper` (CTranslate2) and generation runs against a local Ollama model.
 

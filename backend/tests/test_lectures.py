@@ -148,12 +148,31 @@ def test_upload_m4a_rejected_returns_415(
     client, token, user_id = authed_client
     course_id = _make_course(user_id)
 
-    # Fake m4a-ish body — the exact bytes don't matter because MIME check happens first.
-    body = b"\x00\x00\x00\x20ftypM4A "
+    # Minimal M4A ftyp box: 32-byte box, `ftyp` header, `M4A ` major brand.
+    body = b"\x00\x00\x00\x20ftypM4A \x00\x00\x00\x00" + b"\x00" * 16
     resp = client.post(
         f"/api/courses/{course_id}/lectures",
         headers={"Authorization": f"Bearer {token}"},
         files={"file": ("lecture.m4a", body, "audio/mp4")},
+    )
+    assert resp.status_code == 202, resp.text
+    mock_worker_enqueue.assert_called_once()
+
+
+def test_upload_video_mp4_mime_rejected_returns_415(
+    authed_client: tuple[Any, str, int],
+    fake_ffmpeg: None,
+    mock_worker_enqueue: MagicMock,
+) -> None:
+    client, token, user_id = authed_client
+    course_id = _make_course(user_id)
+
+    # `video/mp4` is not in the accepted MIME set, so we reject before magic-byte sniffing.
+    body = b"\x00\x00\x00\x20ftypmp42\x00\x00\x00\x00" + b"\x00" * 16
+    resp = client.post(
+        f"/api/courses/{course_id}/lectures",
+        headers={"Authorization": f"Bearer {token}"},
+        files={"file": ("movie.mp4", body, "video/mp4")},
     )
     assert resp.status_code == 415, resp.text
     assert _lecture_count() == 0

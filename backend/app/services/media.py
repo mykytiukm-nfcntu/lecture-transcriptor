@@ -30,12 +30,21 @@ class MediaNormaliseError(MediaError):
 
 
 _ACCEPTED_MIMES: frozenset[str] = frozenset(
-    {"audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav", "audio/wave"}
+    {
+        "audio/mpeg",
+        "audio/mp3",
+        "audio/wav",
+        "audio/x-wav",
+        "audio/wave",
+        "audio/mp4",
+        "audio/x-m4a",
+        "audio/m4a",
+    }
 )
 
 
 def validate_mime(content_type: str | None) -> None:
-    """Raise `UnsupportedMediaTypeError` if the declared MIME is not mp3/wav."""
+    """Raise `UnsupportedMediaTypeError` if the declared MIME is not mp3/wav/m4a."""
     if not content_type:
         raise UnsupportedMediaTypeError("Missing Content-Type on upload")
     # Strip parameters like `;charset=...`, and normalise case.
@@ -45,7 +54,7 @@ def validate_mime(content_type: str | None) -> None:
 
 
 def sniff_magic(head: bytes) -> str | None:
-    """Return `"mp3"`, `"wav"`, or `None` based on the first 12 bytes of the file."""
+    """Return `"mp3"`, `"wav"`, `"m4a"`, or `None` based on the first 12 bytes of the file."""
     if len(head) < 4:
         return None
     if head[:3] == b"ID3":
@@ -56,6 +65,10 @@ def sniff_magic(head: bytes) -> str | None:
         return "mp3"
     if len(head) >= 12 and head[:4] == b"RIFF" and head[8:12] == b"WAVE":
         return "wav"
+    # MP4/M4A ftyp box. The MIME gate above already rejects video/*; ffmpeg will drop any
+    # incidental video stream during normalisation because the output container is WAV.
+    if len(head) >= 12 and head[4:8] == b"ftyp":
+        return "m4a"
     return None
 
 
@@ -68,8 +81,10 @@ def save_upload(user_id: int, lecture_id: int, filename: str, src_stream: IO[byt
     head = src_stream.read(12)
     ext = sniff_magic(head)
     if ext is None:
-        logger.warning("Rejected upload %r: magic bytes do not match mp3/wav", filename)
-        raise UnsupportedMediaTypeError(f"File contents are not a valid MP3 or WAV: {filename!r}")
+        logger.warning("Rejected upload %r: magic bytes do not match mp3/wav/m4a", filename)
+        raise UnsupportedMediaTypeError(
+            f"File contents are not a valid MP3, WAV, or M4A: {filename!r}"
+        )
 
     settings = get_settings()
     dest_dir = settings.media_root / str(user_id) / str(lecture_id)

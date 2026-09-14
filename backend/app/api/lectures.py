@@ -131,7 +131,7 @@ def upload_lecture(
         logger.info("rejected upload: content-type %r", file.content_type)
         raise HTTPException(
             status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="only mp3 or wav files are accepted",
+            detail="only mp3, wav, or m4a files are accepted",
         ) from exc
 
     original_filename = file.filename or "upload"
