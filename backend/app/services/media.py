@@ -1,9 +1,11 @@
 """Media validation, ffprobe duration, ffmpeg normalisation, upload streaming."""
+
 from __future__ import annotations
 
 import json
 import logging
 import subprocess
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import IO
@@ -105,9 +107,13 @@ def save_upload(user_id: int, lecture_id: int, filename: str, src_stream: IO[byt
 def probe_duration(path: Path) -> float:
     """Return the media duration in seconds via `ffprobe`. Raise `MediaProbeError` on failure."""
     cmd = [
-        "ffprobe", "-v", "error",
-        "-show_entries", "format=duration",
-        "-of", "json",
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "json",
         str(path),
     ]
     try:
@@ -144,11 +150,16 @@ def normalise(
     path_out.parent.mkdir(parents=True, exist_ok=True)
     stream_progress = on_progress is not None and total_seconds is not None and total_seconds > 0
     cmd: list[str] = [
-        "ffmpeg", "-y",
-        "-i", str(path_in),
-        "-ac", "1",
-        "-ar", "16000",
-        "-af", "loudnorm",
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(path_in),
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-af",
+        "loudnorm",
     ]
     if stream_progress:
         cmd += ["-progress", "pipe:1", "-nostats"]
@@ -177,6 +188,22 @@ def normalise(
     except FileNotFoundError as exc:
         raise MediaNormaliseError("ffmpeg not found on PATH") from exc
 
+    # Drain stderr concurrently: loudnorm noise + decoder warnings can fill the
+    # ~64 KB pipe buffer on Windows before ffmpeg finishes emitting `-progress`
+    # lines on stdout, deadlocking `proc.wait()`. This reader keeps stderr clear.
+    stderr_chunks: list[str] = []
+
+    def _drain_stderr() -> None:
+        assert proc.stderr is not None
+        try:
+            for chunk in proc.stderr:
+                stderr_chunks.append(chunk)
+        except Exception:  # noqa: BLE001 - drain thread failures must never mask the primary error.
+            logger.exception("ffmpeg stderr drain thread raised; ignoring")
+
+    stderr_thread = threading.Thread(target=_drain_stderr, daemon=True, name="ffmpeg-stderr")
+    stderr_thread.start()
+
     try:
         assert proc.stdout is not None
         for line in proc.stdout:
@@ -197,8 +224,9 @@ def normalise(
         if proc.poll() is None:
             proc.kill()
             proc.wait()
+        stderr_thread.join(timeout=5.0)
     if rc != 0:
-        stderr = proc.stderr.read().strip() if proc.stderr else ""
+        stderr = "".join(stderr_chunks).strip()
         logger.error("ffmpeg normalise failed for %s: %s", path_in, stderr)
         raise MediaNormaliseError(f"ffmpeg normalise failed: {stderr[:500]}")
 
